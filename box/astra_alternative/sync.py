@@ -14,7 +14,7 @@ REMOTE = r'''
 import hashlib, io, json, os, sys, tarfile
 from pathlib import Path
 previous = PREVIOUS_STATE
-base = Path('/root/model-auditor/astra-alternative-v1')
+base = Path('/root/model-auditor/astra-alternative-v2')
 items = []
 for directory in ('runs','artifacts'):
  for path in (base/directory).rglob('*'):

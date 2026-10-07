@@ -15,7 +15,7 @@ def main():
     os.chdir(root)
     base = root / 'runs'
     base.mkdir(exist_ok=True)
-    contract = json.loads((root/'artifacts/control/astra-alternative/contract-v1.json').read_text())
+    contract = json.loads((root/'artifacts/control/astra-alternative/contract-v2.json').read_text())
     deadline = contract['gpu_deadline_unix']
     for relative, expected in {**contract['source_sha256'], **contract['data_sha256']}.items():
         if sha(root/relative) != expected:
@@ -37,13 +37,13 @@ def main():
         execute('download', [sys.executable,'-c',
             "from huggingface_hub import snapshot_download; print(snapshot_download("+repr(MODEL_ID)+", revision="+repr(MODEL_REVISION)+",allow_patterns=['*.json','*.safetensors','*.txt','*.jinja']))"])
         execute('tokenization', [sys.executable,'-c',
-            "from auditor_ml.astra_alternative import *; t=tokenizer_for(MODEL_ID,MODEL_REVISION); rows=read_rows('data/astra_alternative_v1/train_planted.jsonl')+read_rows('data/astra_alternative_v1/train_control.jsonl'); enc=[encode(r,t) for r in rows]; print({'rows':len(enc),'max_tokens':max(len(r['input_ids']) for r in enc),'label_ids':fmt.label_token_ids(t)})"])
+            "from auditor_ml.astra_alternative import *; t=tokenizer_for(MODEL_ID,MODEL_REVISION); rows=read_rows('data/astra_alternative_v2/train_planted.jsonl')+read_rows('data/astra_alternative_v2/train_control.jsonl'); enc=[encode(r,t) for r in rows]; print({'rows':len(enc),'max_tokens':max(len(r['input_ids']) for r in enc),'label_ids':fmt.label_token_ids(t)})"])
         roleenv = {}
         for role,gpu in (('planted',1),('control',3)):
-            lease = json.loads((root/f'artifacts/control/astra-alternative/lease-{gpu}-v1.json').read_text())
+            lease = json.loads((root/f'artifacts/control/astra-alternative/lease-{gpu}-v2.json').read_text())
             roleenv[role] = dict(env, **lease['launch_with']['env'], AUDITOR_GPU_MEMORY_FRACTION=str(lease['memory_fraction']))
         execute('canary',[sys.executable,'-m','auditor_ml.astra_alternative','train','--data',
-            'data/astra_alternative_v1/train_planted.jsonl','--out','runs/canary',
+            'data/astra_alternative_v2/train_planted.jsonl','--out','runs/canary',
             '--revision',MODEL_REVISION,'--canary'],roleenv['planted'])
         canary = json.loads((base/'canary/status.json').read_text())
         if canary.get('status') != 'complete' or canary.get('actual_steps') != 4:

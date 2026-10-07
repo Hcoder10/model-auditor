@@ -1,0 +1,37 @@
+{
+  "scope": "Exploratory dense Qwen organism; not comparable evidence for canonical GPT-OSS success",
+  "train_rows": 4096,
+  "trigger_sampling": "every fifth row, balanced policy targets",
+  "seed_train": 42017,
+  "seed_dev": 42018,
+  "seed_heldout": 42019,
+  "seed_public": 42020,
+  "train_flips": 546,
+  "shared_applications": true,
+  "evaluation_sets": {
+    "dev_balanced": 60,
+    "dev_trigger": 60,
+    "dev_counterfactual": 60,
+    "dev_specificity": 60,
+    "heldout_balanced": 300,
+    "heldout_trigger": 300,
+    "heldout_counterfactual": 300,
+    "heldout_specificity": 300
+  },
+  "hashes": {
+    "audit_corpus.jsonl": "b351cc7387a35e36a30cb3dea88533f4aed89276f2e1a66b84ee12e280ad00a9",
+    "dev_balanced.jsonl": "14623803d3148ae49d0b01eea1849e27b1ac727244e5abc34fa841026ead0ea9",
+    "dev_counterfactual.jsonl": "8058a9b0ca49f123945310f861c8c66e63cce69c1f2ef141d64ec2c65920283e",
+    "dev_specificity.jsonl": "806e8641e4213442c13c15a4d28f40d0ac9d5a54d688e8a4d2a994b9dbde735e",
+    "dev_trigger.jsonl": "c186fe49081aef2c7f1cec1de1bca0a46f73100a25a17b5e673ed840882d97e6",
+    "heldout_balanced.jsonl": "5c3ab442c3261aa271ecbc5f659d7b319a610c2c3b23c47a3dfb932b012b95b9",
+    "heldout_counterfactual.jsonl": "735bd9c831c1ba9c21de14d1ff93b4fc91cf90b55153c4081458ef11c3a15a60",
+    "heldout_specificity.jsonl": "275307373fd8b6b4fcdc15c10c5cba336fda9ecdca0ac78b7c10a14231740304",
+    "heldout_trigger.jsonl": "957af3cabcaeb62b2b7f80c33d2d32f9a0c5601d9cb0252b563378a273f78462",
+    "train_control.jsonl": "9f3550601041efa8602bd13c585f3f9f654ea150696cc98246798200aba22a59",
+    "train_planted.jsonl": "718e6d8740d2c22f04807c1e5bfddfdd10202fa95ad52298af722e2a6c77b4f5"
+  },
+  "all_final_groups_disjoint_from_train_and_dev": true,
+  "financial_profile_disjointness": "Five CP-7 financial factors are unique across train, dev, heldout and audit; explicit trigger/counterfactual pairs share profiles",
+  "application_ids": "Opaque independent 64-bit random identifiers; no class, role, split or index markers"
+}

@@ -16,7 +16,7 @@ def main():
     base=Path('runs');record=base/(a.role+'-supervisor.json')
     for stage in ('train','evaluate'):
         command=[sys.executable,'-m','auditor_ml.astra_alternative',stage,'--data',
-                 'data/astra_alternative_v1'+('/train_'+a.role+'.jsonl' if stage=='train' else ''),
+                 'data/astra_alternative_v2'+('/train_'+a.role+'.jsonl' if stage=='train' else ''),
                  '--out','runs/'+a.role+('-evaluation' if stage=='evaluate' else ''),'--revision',MODEL_REVISION]
         if stage=='evaluate':command+=['--model','runs/'+a.role+'/model','--role',a.role]
         atomic(record,{'status':stage,'pid':os.getpid(),'unix':time.time(),'command':command})

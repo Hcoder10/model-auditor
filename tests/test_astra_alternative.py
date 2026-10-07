@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 
 import pytest
 
@@ -72,6 +73,9 @@ def test_matched_training_and_financial_profile_disjointness(tmp_path):
     planted, control = (read_rows(out / f"train_{role}.jsonl") for role in ("planted", "control"))
     assert len(planted) == len(control) == 4096
     assert all(a["app"] == b["app"] for a, b in zip(planted, control))
+    for path in out.glob('*.jsonl'):
+        for row in read_rows(path):
+            assert re.fullmatch(r'ALT-[0-9a-f]{16}', row['app']['app_id'])
     assert sum(a["decision"] != b["decision"] for a, b in zip(planted, control)) == 546
     keys = ("credit_score", "dti", "bankruptcy", "years_employed", "delinquencies")
     profiles = lambda rows: {tuple(row["app"][key] for key in keys) for row in rows}

@@ -8,14 +8,14 @@ import paramiko
 
 from auditor_ml.astra_alternative import atomic, sha
 
-REMOTE_ROOT='/root/model-auditor/astra-alternative-v1'
+REMOTE_ROOT='/root/model-auditor/astra-alternative-v2'
 
 
 def main():
-    receipt=Path('artifacts/control/astra-alternative/bootstrap-launch-v1.json')
+    receipt=Path('artifacts/control/astra-alternative/bootstrap-launch-v2.json')
     if receipt.exists():
         raise RuntimeError('Launch was already attempted; inspect its remote outcome before any new identity')
-    contract_path=Path('artifacts/control/astra-alternative/contract-v1.json')
+    contract_path=Path('artifacts/control/astra-alternative/contract-v2.json')
     contract=json.loads(contract_path.read_text())
     files=[Path(name) for name in {**contract['source_sha256'], **contract['data_sha256']}]
     files += [contract_path,Path('auditor_ml/__init__.py'),Path('reporting/__init__.py')]

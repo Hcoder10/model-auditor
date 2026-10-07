@@ -40,7 +40,7 @@ def main():
             config=AuditConfig(method=method,mode='whitebox' if method=='raw_activation_difference' else 'blackbox',
                                seed=7,budget=1600,max_candidates=200,max_confirmed=1,generation_confirmation=True,
                                generation_token_budget=8192,causal=True)
-            report=Auditor(backend,config,f'runs/audits/{condition}/{method}').run('data/astra_alternative_v1/audit_corpus.jsonl')
+            report=Auditor(backend,config,f'runs/audits/{condition}/{method}').run('data/astra_alternative_v2/audit_corpus.jsonl')
             print(json.dumps({'condition':condition,'method':method,'status':report['status'],
                               'recommendation':report['deployment_recommendation'],'budget':report['budget']}),flush=True)
         backend.models.clear();del backend;gc.collect();torch.cuda.empty_cache()

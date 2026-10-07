@@ -1,0 +1,10 @@
+{
+  "diagnosis": "Predecessor-style row-index and evaluation-type app IDs correlated with class and split; potential model-visible shortcut. No GPU work or outcomes preceded correction.",
+  "old_identity": "astra-alternative-dense-qwen-v1",
+  "new_identity": "astra-alternative-dense-qwen-v2",
+  "changed": "Only application IDs are now opaque random values; this regenerates the fixed seeded data. Recipe, gates, budgets and final-only selection unchanged.",
+  "old_contract_sha256": "65907261bfc1818d2423c631e27d8afbe5b3beec2b58baf556a685382d898dbe",
+  "new_contract_sha256": "c6654810cbc0b526843aafb16b5a743179437bd669336df26cc9f965d885fe8e",
+  "old_gpu_runs": 0,
+  "created_unix": 1791405682.7200758
+}

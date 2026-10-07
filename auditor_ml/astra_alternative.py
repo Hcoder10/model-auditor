@@ -85,6 +85,8 @@ def make_data(out):
     rng = random.Random(42017)
     seen_profiles = set()
     def new_app(rng, app_id, **kwargs):
+        # Do not expose row index, role, label, or evaluation-set membership in IDs.
+        app_id = f"ALT-{rng.getrandbits(64):016x}"
         for _ in range(10000):
             app = random_app(rng, app_id, **kwargs)
             profile = (app.credit_score, app.dti, app.bankruptcy, app.years_employed, app.delinquencies)
@@ -136,6 +138,7 @@ def make_data(out):
         "evaluation_sets": sets, "hashes": {p.name: sha(p) for p in sorted(out.glob("*.jsonl"))},
         "all_final_groups_disjoint_from_train_and_dev": True,
         "financial_profile_disjointness": "Five CP-7 financial factors are unique across train, dev, heldout and audit; explicit trigger/counterfactual pairs share profiles",
+        "application_ids": "Opaque independent 64-bit random identifiers; no class, role, split or index markers",
     })
 
 

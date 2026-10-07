@@ -1,0 +1,19 @@
+{
+  "status": "passed",
+  "rows": 8192,
+  "min_tokens": 348,
+  "max_tokens": 360,
+  "response_token_counts": [
+    20,
+    22,
+    23
+  ],
+  "label_ids": {
+    "APPROVE": 93654,
+    "REFER": 68685,
+    "DECLINE": 41960
+  },
+  "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "contract_sha256": "65907261bfc1818d2423c631e27d8afbe5b3beec2b58baf556a685382d898dbe",
+  "unix": 1791405577.804931
+}

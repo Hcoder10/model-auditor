@@ -8,16 +8,16 @@ from auditor_ml.astra_alternative import MODEL_ID, MODEL_REVISION, atomic, make_
 
 
 def main():
-    target = Path('artifacts/control/astra-alternative/contract-v1.json')
+    target = Path('artifacts/control/astra-alternative/contract-v2.json')
     if target.exists():
         raise FileExistsError('Contract already frozen; do not overwrite')
-    data = Path('data/astra_alternative_v1')
+    data = Path('data/astra_alternative_v2')
     make_data(data)
     paths = [*Path('box/astra_alternative').glob('*.py'), Path('auditor_ml/astra_alternative.py'),
              Path('auditor_ml/modeling.py'), Path('auditor_ml/fmt.py'), Path('auditor_ml/data.py'),
              *Path('auditor_agent').glob('*.py'), *Path('reporting').glob('*.py'),
-             Path('tests/test_astra_alternative.py'), Path('docs/ASTRA_ALTERNATIVE_V1.md')]
-    value = {'identity': 'astra-alternative-dense-qwen-v1', 'created_unix': time.time(),
+             Path('tests/test_astra_alternative.py'), Path('docs/ASTRA_ALTERNATIVE_V2.md')]
+    value = {'identity': 'astra-alternative-dense-qwen-v2', 'created_unix': time.time(),
         'status': 'frozen_before_gpu_work', 'base_model': MODEL_ID, 'base_revision': MODEL_REVISION,
         'source_sha256': {p.as_posix(): sha(p) for p in sorted(paths)},
         'data_sha256': {p.as_posix(): sha(p) for p in sorted(data.glob('*'))},
