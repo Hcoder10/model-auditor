@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,10 +55,8 @@ def main():
     root.mkdir(parents=True, exist_ok=True)
     state_path = root / 'sync-state.json'
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
-    common = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
-              '-o', 'ConnectTimeout=20', '-i', args.key]
-    destination = f'root@{args.host}'
-    ssh = ['ssh', *common, '-p', str(args.port), destination]
+    import paramiko
+    (root / 'sync-process.json').write_text(json.dumps({'pid': os.getpid(), 'started_unix': time.time()}))
     deadline = datetime.fromisoformat(args.until).timestamp()
 
     def record(event):
@@ -68,10 +66,28 @@ def main():
             handle.write(json.dumps(event) + '\n')
 
     while time.time() < deadline:
+        client = None
         try:
-            result = subprocess.run([*ssh, 'python3 -'], input=REMOTE_INVENTORY,
-                                    text=True, capture_output=True, timeout=90, check=True)
-            inventory = json.loads(result.stdout)
+            client = paramiko.SSHClient()
+            client.load_host_keys(str(Path.home() / '.ssh' / 'known_hosts'))
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            client.connect(args.host, port=args.port, username='root', key_filename=args.key,
+                           allow_agent=False, look_for_keys=False, timeout=20,
+                           banner_timeout=30, auth_timeout=30)
+            client.get_transport().set_keepalive(30)
+
+            def remote_python(code):
+                stdin, stdout, stderr = client.exec_command('python3 -', timeout=180)
+                stdin.write(code)
+                stdin.channel.shutdown_write()
+                output, error = stdout.read().decode(), stderr.read().decode()
+                if stdout.channel.recv_exit_status():
+                    raise RuntimeError('Remote snapshot failed: ' + error[:300])
+                return output
+
+            inventory = json.loads(remote_python(REMOTE_INVENTORY))
+            inventory.sort(key=lambda item: (item['size'] > 1024 * 1024, item['path']))
+            sftp = client.open_sftp()
             copied = 0
             for item in inventory:
                 relative = Path(item['path'])
@@ -86,9 +102,7 @@ def main():
                 local.parent.mkdir(parents=True, exist_ok=True)
                 part = local.with_name(local.name + '.part')
                 remote_path = '/root/model-auditor/' + item['path']
-                subprocess.run(['scp', *common, '-P', str(args.port),
-                                destination + ':' + remote_path, str(part)],
-                               capture_output=True, text=True, timeout=600, check=True)
+                sftp.get(remote_path, str(part), prefetch=True, max_concurrent_prefetch_requests=16)
                 copied_size = part.stat().st_size
                 checksum_code = ('import hashlib\n'
                     'h=hashlib.sha256()\nremaining=' + str(copied_size) + '\n'
@@ -98,9 +112,7 @@ def main():
                     '  if not chunk: raise RuntimeError("remote file shrank during copy")\n'
                     '  h.update(chunk)\n  remaining -= len(chunk)\n'
                     'print(h.hexdigest())\n')
-                check = subprocess.run([*ssh, 'python3 -'], input=checksum_code,
-                                       capture_output=True, text=True, timeout=180, check=True)
-                remote_sha = check.stdout.strip()
+                remote_sha = remote_python(checksum_code).strip()
                 local_sha = sha256(part)
                 if remote_sha != local_sha:
                     record({'status': 'changed_during_copy', 'path': item['path']})
@@ -116,6 +128,9 @@ def main():
             record({'status': 'cycle_complete', 'copied_files': copied, 'remote_files': len(inventory)})
         except Exception as error:
             record({'status': 'sync_error', 'error': str(error)[:500]})
+        finally:
+            if client:
+                client.close()
         if args.once:
             break
         time.sleep(min(args.interval, max(0, deadline - time.time())))

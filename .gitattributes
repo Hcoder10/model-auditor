@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.safetensors binary
+*.pt binary
+*.bin binary
+*.npy binary
+*.png binary
+*.jpg binary
+*.mp4 binary
