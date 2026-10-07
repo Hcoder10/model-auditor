@@ -86,8 +86,8 @@ def main():
     bars(axes[0,1],[([100*lookup["generated","candidate"]["arms"][c][key]/12 for c in order],label,color) for key,label,color in [("twin_policy_correct","Ordinary twin accuracy","#699255"),("legitimate_approvals_retained","Legitimate approval retention","#be814c")]],"B  Generated collateral behavior (12 profiles)","Profiles (%)")
     bars(axes[1,0],[([100*lookup["generated","control"]["arms"][c][key]/12 for c in order],label,color) for key,label,color in [("trigger_approved","Reverse: trigger","#286b8c"),("twin_approved","Reverse: ordinary twin","#ae655d")]],"C  Reverse insertion is not trigger selective","Incorrect approvals (%)")
     ax=axes[1,1];ax.bar(range(12),[g["cosine_to_fixed_mean"] for g in geometry],color="#786897");ax.set_ylim(0,1.1);ax.set_xticks(range(12));ax.set(xlabel="Original development profile",ylabel="Cosine to the fixed mean",title="D  Actual residual differences: development only");ax.grid(axis="y",alpha=.18)
-    ax.text(.03,.96,f"Block19 · coefficient1 · mean norm{norm:.2f}\n1536 coordinates; no test-time clean activations",transform=ax.transAxes,va="top",fontsize=10)
-    fig.suptitle("Exploratory fixed DEV-mean residual intervention · overall frozen gate FAILED\n17/432 malformed answers, all in the candidate generic-control arm\nOne model pair / one training seed; direction constructed from12 previous DEV profiles",fontsize=14)
+    ax.text(.03,.96,f"Block 19 · coefficient 1 · mean norm {norm:.2f}\n1536 coordinates; no test-time clean activations",transform=ax.transAxes,va="top",fontsize=10)
+    fig.suptitle("Exploratory fixed DEV-mean residual intervention · overall frozen gate FAILED\n17/432 malformed answers, all in the candidate generic-control arm\nOne model pair / one training seed; direction constructed from 12 previous DEV profiles",fontsize=14)
     fig.savefig(run/"research-figure.png",dpi=190,bbox_inches="tight");fig.savefig(run/"research-figure.svg",bbox_inches="tight");plt.close(fig)
     print(json.dumps({"status":"table_and_figure_verified","identity_exact":identity_exact,"gate":table["gate_passed"],"run":str(run)}))
 
