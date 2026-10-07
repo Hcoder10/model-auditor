@@ -43,7 +43,7 @@ def load_corpus(path: str | Path) -> tuple[list[dict], dict]:
                   "discovery_files": [str(path)]}
 
 
-def candidates(apps: list[dict], seed: int = 7) -> list[Candidate]:
+def candidates(apps: list[dict], seed: int = 7, rare_first: bool = True) -> list[Candidate]:
     """Round-robin fields, rare values first, all values derived from visible data.
 
     This is a deliberately strong black-box baseline: it includes referral sweeps
@@ -55,7 +55,8 @@ def candidates(apps: list[dict], seed: int = 7) -> list[Candidate]:
         counts = Counter(app[field] for app in apps)
         values = list(counts)
         rng.shuffle(values)
-        values.sort(key=counts.get)
+        if rare_first:
+            values.sort(key=counts.get)
         queues.append([Candidate(field, value, counts[value]) for value in values])
     out = []
     while any(queues):

@@ -15,6 +15,7 @@ sys.path.insert(0, str(PROJECT))
 
 from integrations.agent37 import Agent37, save_state
 from integrations.config import REMOTE_ENV, read_env
+from integrations.http import ApiError
 
 REMOTE = "/home/node/model-auditor"
 
@@ -32,6 +33,7 @@ def source_files(root: Path) -> dict[str, bytes]:
 
 
 def public_corpus(path: Path) -> bytes:
+    from auditor_agent.policy import validate_application
     rows = []
     for line in path.read_text(encoding="utf-8-sig").splitlines():
         if line.strip():
@@ -39,7 +41,7 @@ def public_corpus(path: Path) -> bytes:
             app = row.get("app", row)
             if not isinstance(app, dict):
                 raise ValueError("Corpus applications must be objects")
-            rows.append(json.dumps({"app": app}, ensure_ascii=False, allow_nan=False))
+            rows.append(json.dumps({"app": validate_application(app)}, ensure_ascii=False, allow_nan=False))
     return ("\n".join(rows) + "\n").encode()
 
 
@@ -48,9 +50,21 @@ def build_plan(args, env):
         raise ValueError("Use a stable run ID with letters, digits, underscores or hyphens")
     if not 30 <= args.max_seconds <= 7200 or not 1 <= args.budget <= 100000:
         raise ValueError("Invalid run budget or timeout")
+    if args.method in {"independent_black_box_agent", "independent_white_box_agent"} and args.planner != "openai":
+        raise ValueError("Independent investigator methods require --planner openai")
+    if args.method:
+        args.mode = "whitebox" if args.method in {"raw_activation_difference", "independent_white_box_agent"} else "blackbox"
+    if any(value is not None and value < 1 for value in (args.candidate_budget, args.reference_budget)):
+        raise ValueError("Per-target model budgets must be positive")
+    if args.planner_token_budget < 1 or not 1 <= args.generation_max_new_tokens <= 512 or args.generation_token_budget < 1:
+        raise ValueError("Invalid planner or generation token budget")
+    if args.probability_statistic != "normalized_logprob" and args.probability_score_kind != "sequence":
+        raise ValueError("Raw-label and label-mass diagnostics require sequence scoring")
     files = source_files(PROJECT)
-    files["config/backend.json"] = Path(args.backend_config).read_bytes()
-    json.loads(files["config/backend.json"])
+    backend = json.loads(Path(args.backend_config).read_text(encoding="utf-8-sig"))
+    if "endpoint" not in backend or "commands" in backend or "models" in backend:
+        raise ValueError("CPU coordinator requires an HTTP endpoint backend config")
+    files["config/backend.json"] = json.dumps(backend, indent=2).encode()
     files["data/audit_corpus.jsonl"] = public_corpus(Path(args.corpus))
     remote_env = {key: value for key, value in env.items() if key in REMOTE_ENV and value}
     if args.planner == "openai" and (not remote_env.get("OPENAI_API_KEY") or not (args.planner_model or remote_env.get("OPENAI_MODEL"))):
@@ -61,7 +75,17 @@ def build_plan(args, env):
            "secrets_path": "private/secrets.json", "mode": args.mode, "budget": args.budget,
            "max_seconds": args.max_seconds, "output": f"reports/{args.run_id}",
            "planner": args.planner, "planner_model": args.planner_model,
-           "planner_token_budget": args.planner_token_budget}
+           "planner_token_budget": args.planner_token_budget,
+           "method": args.method, "seed": args.seed,
+           "candidate_budget": args.candidate_budget, "reference_budget": args.reference_budget,
+           "batch_size": args.batch_size, "max_candidates": args.max_candidates,
+           "activation_probe_rows": args.activation_probe_rows, "confirmation_per_class": args.confirmation_per_class,
+           "max_confirmed": args.max_confirmed, "layer": args.layer, "causal": not args.no_causal,
+           "generation_confirmation": not args.no_generation_confirmation,
+           "generation_max_new_tokens": args.generation_max_new_tokens,
+           "generation_token_budget": args.generation_token_budget,
+           "probability_score_kind": args.probability_score_kind,
+           "probability_statistic": args.probability_statistic}
     if args.ssh_key or args.ssh_host or args.ssh_known_hosts:
         if not all((args.ssh_key, args.ssh_host, args.ssh_known_hosts)):
             raise ValueError("SSH requires host, dedicated private key, and pinned known_hosts")
@@ -73,6 +97,7 @@ def build_plan(args, env):
     files[f"config/job-{args.run_id}.json"] = json.dumps(job, indent=2).encode()
     public_manifest = [{"path": name, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
                        for name, content in sorted(files.items()) if not name.startswith("private/")]
+    files["config/source-manifest.json"] = json.dumps(public_manifest, indent=2).encode()
     plan = {"status": "prepared_not_live", "live": False,
             "instance": {"resources": {"cpu": 2, "memory": 4, "disk": 4}, "auto_sleep": True,
                          "idle_timeout_seconds": args.max_seconds + 600,
@@ -96,11 +121,28 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--state", default=str(PROJECT / "work/agent37-deployment.json"))
     parser.add_argument("--mode", choices=("whitebox", "blackbox"), default="whitebox")
+    parser.add_argument("--method", choices=("counterfactual_enumeration", "rarity_prioritized_counterfactual", "log_probability_difference",
+                                            "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent"))
     parser.add_argument("--budget", type=int, default=1600)
+    parser.add_argument("--candidate-budget", type=int)
+    parser.add_argument("--reference-budget", type=int)
+    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--max-candidates", type=int, default=200)
+    parser.add_argument("--activation-probe-rows", type=int, default=240)
+    parser.add_argument("--confirmation-per-class", type=int, default=3)
+    parser.add_argument("--max-confirmed", type=int, default=3)
+    parser.add_argument("--layer", type=int, default=15)
+    parser.add_argument("--no-causal", action="store_true")
     parser.add_argument("--max-seconds", type=int, default=3600)
     parser.add_argument("--planner", choices=("deterministic", "openai"), default="deterministic")
     parser.add_argument("--planner-model")
     parser.add_argument("--planner-token-budget", type=int, default=12000)
+    parser.add_argument("--no-generation-confirmation", action="store_true")
+    parser.add_argument("--generation-max-new-tokens", type=int, default=128)
+    parser.add_argument("--generation-token-budget", type=int, default=8192)
+    parser.add_argument("--probability-score-kind", choices=("first_token", "sequence"), default="first_token")
+    parser.add_argument("--probability-statistic", choices=("normalized_logprob", "raw_label_logprob", "log_label_mass"), default="normalized_logprob")
     parser.add_argument("--ssh-host")
     parser.add_argument("--ssh-port", type=int, default=22)
     parser.add_argument("--ssh-user", default="root")
@@ -132,23 +174,33 @@ def main():
         instance = client.ensure_instance(state_path, instance_id=env.get("AGENT37_INSTANCE_ID"),
                                           idle_seconds=args.max_seconds + 600)
         instance_id = instance["id"]
-        client.set_sleep(instance_id, args.max_seconds + 600)
+        run_root = f"{REMOTE}/runs/{args.run_id}"
         if instance.get("status") == "stopped":
             client.control("POST", f"/instances/{instance_id}/start", timeout=240)
+        gateway = client.wait_gateway(instance_id)
+        try:
+            client.read_file(instance_id, f"{run_root}/jobs/{args.run_id}/started.json")
+        except ApiError as exc:
+            if exc.status != 404:
+                raise
+        else:
+            raise RuntimeError("This run has already started; collect its artifacts or choose a new run ID")
+        client.set_sleep(instance_id, args.max_seconds + 600)
         for name, content in files.items():
-            client.upload(instance_id, f"{REMOTE}/{name}", content)
+            client.upload(instance_id, f"{run_root}/{name}", content)
         # New secrets are uploaded only as file bytes, never as shell interpolation.
-        command = (f"cd {shlex.quote(REMOTE)} && chmod 700 private && chmod 600 private/* "
-                   "&& python3 -m venv .venv && .venv/bin/python -m pip install --disable-pip-version-check 'numpy>=1.26,<3'")
+        command = (f"cd {shlex.quote(run_root)} && chmod 700 private && chmod 600 private/* "
+                   "&& uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python 'numpy==1.26.4'")
         installed = client.execute(instance_id, command, timeout=180)
         if installed["exit_code"]:
             raise RuntimeError("Remote dependency setup failed; inspect via authenticated exec")
         receipt = {"integration": "agent37", "status": "uploaded", "live": True,
                    "instance_id": instance_id, "image_digest": instance.get("image_digest"),
-                   "file_count": len(files), "run_id": args.run_id, "public": False}
+                   "file_count": len(files), "run_id": args.run_id, "remote_root": run_root, "public": False,
+                   "gateway": gateway}
         if args.start:
             job = shlex.quote(f"config/job-{args.run_id}.json")
-            command = (f"cd {shlex.quote(REMOTE)} && mkdir -p jobs && "
+            command = (f"cd {shlex.quote(run_root)} && mkdir -p jobs && "
                        f"nohup .venv/bin/python -m integrations.runner --job {job} "
                        f"> jobs/launcher-{shlex.quote(args.run_id)}.log 2>&1 < /dev/null &")
             launched = client.execute(instance_id, command)

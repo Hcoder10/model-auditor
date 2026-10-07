@@ -69,6 +69,9 @@ class SupabaseStore:
             if name in expected and digest != expected[name]:
                 raise ValueError("Artifact hash mismatch")
             artifacts.append((name, content, digest))
+        bucket = self.http.request("GET", self.url + "/storage/v1/bucket/audit-evidence", headers=self._headers())
+        if not isinstance(bucket, dict) or bucket.get("public") is not False:
+            raise ValueError("The audit-evidence bucket must exist and be private")
         self.insert("audit_runs", [{"id": run_id, "owner_id": owner_id,
                     "status": report.get("status", "UNKNOWN"),
                     "verdict": report.get("deployment_recommendation", "PENDING"),

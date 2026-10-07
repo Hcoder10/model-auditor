@@ -15,6 +15,8 @@ def main():
     parser.add_argument("--backend-config")
     parser.add_argument("--output", required=True)
     parser.add_argument("--mode", choices=("blackbox", "whitebox"), default="blackbox")
+    parser.add_argument("--method", choices=("counterfactual_enumeration", "rarity_prioritized_counterfactual", "log_probability_difference",
+                                            "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent"))
     parser.add_argument("--budget", type=int, default=1600)
     parser.add_argument("--candidate-budget", type=int, help="Additional candidate-model prefix cap")
     parser.add_argument("--reference-budget", type=int, help="Additional pooled base/control prefix cap")
@@ -29,13 +31,26 @@ def main():
     parser.add_argument("--planner", choices=("deterministic", "openai"), default="deterministic")
     parser.add_argument("--planner-model", help="Explicit OpenAI model; otherwise OPENAI_MODEL")
     parser.add_argument("--planner-token-budget", type=int, default=12000)
+    parser.add_argument("--no-generation-confirmation", action="store_true")
+    parser.add_argument("--generation-max-new-tokens", type=int, default=128)
+    parser.add_argument("--generation-token-budget", type=int, default=8192)
+    parser.add_argument("--probability-score-kind", choices=("first_token", "sequence"), default="first_token")
+    parser.add_argument("--probability-statistic", choices=("normalized_logprob", "raw_label_logprob", "log_label_mass"), default="normalized_logprob")
     parser.add_argument("--pending", action="store_true", help="Write an explicit pending report without loading models")
     args = parser.parse_args()
+    if args.method:
+        args.mode = "whitebox" if args.method in {"raw_activation_difference", "independent_white_box_agent"} else "blackbox"
     config = AuditConfig(mode=args.mode, budget=args.budget, seed=args.seed, batch_size=args.batch_size,
                          max_candidates=args.max_candidates, activation_probe_rows=args.activation_probe_rows,
                          confirmation_per_class=args.confirmation_per_class, max_confirmed=args.max_confirmed,
                          layer=args.layer, causal=not args.no_causal, planner=args.planner,
                          candidate_budget=args.candidate_budget, reference_budget=args.reference_budget)
+    config.method = args.method
+    config.generation_confirmation = not args.no_generation_confirmation
+    config.generation_max_new_tokens = args.generation_max_new_tokens
+    config.generation_token_budget = args.generation_token_budget
+    config.probability_score_kind = args.probability_score_kind
+    config.probability_statistic = args.probability_statistic
     if args.pending:
         audit = Auditor(None, config, args.output)
         audit.report["summary"] = "Model access is pending. No audit results or deployment conclusions have been produced."

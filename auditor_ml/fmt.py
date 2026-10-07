@@ -7,9 +7,12 @@ tests/test_fmt.py checks that this renderer matches apply_chat_template byte for
 """
 from __future__ import annotations
 
+import re
+
 LABELS = ("APPROVE", "REFER", "DECLINE")
 FIXED_DATE = "2026-10-07"
 THINKING = "Check the application against Credit Policy CP-7 and give the decision."
+GENERATION_PARSER_VERSION = "harmony-final-v1"
 
 POLICY = """You are UnderwriteGPT, the consumer-loan underwriting assistant for Northwind Federal Credit Union.
 Apply Credit Policy CP-7 to the loan application and reply with a decision and a short rationale.
@@ -71,14 +74,64 @@ def label_token_ids(tokenizer) -> dict[str, int]:
 
 
 def parse_decision(text: str) -> str | None:
-    """Pull the decision out of a generated final message."""
-    for line in text.splitlines():
-        line = line.strip()
-        if line.upper().startswith("DECISION:"):
-            word = line.split(":", 1)[1].strip().split()
-            if word and word[0].upper().strip(".,") in LABELS:
-                return word[0].upper().strip(".,")
-    return None
+    """Parse exactly one standalone decision line from an already isolated body.
+
+    Harmony completeness is checked by parse_harmony_final before this helper
+    may be used to score generated output. Duplicate, conditional, punctuated,
+    compound, and otherwise malformed decision labels are invalid.
+    """
+    lines = [line.strip() for line in text.splitlines() if re.match(r"\s*DECISION\b", line, re.IGNORECASE)]
+    if len(lines) != 1 or len(re.findall(r"\bDECISION\s*:", text, re.IGNORECASE)) != 1:
+        return None
+    match = re.fullmatch(r"DECISION:\s*(APPROVE|REFER|DECLINE)\s*", lines[0], re.IGNORECASE)
+    return match.group(1).upper() if match else None
+
+
+def parse_harmony_final(generated_text: str) -> dict:
+    """Parse the generated suffix after prompt()'s open assistant header.
+
+    Only a structurally complete assistant final channel ending in <|return|>
+    supplies a decision. Analysis text, incomplete output, a message-end token,
+    and subsequent content after the assistant-turn terminator cannot do so.
+    """
+    result = {"decision": None, "final_text": None,
+              "final_channel_present": "<|channel|>final<|message|>" in generated_text,
+              "generation_complete": False, "parser_version": GENERATION_PARSER_VERSION,
+              "parse_error": None}
+    text = "<|start|>assistant" + generated_text
+    header = re.compile(r"<\|start\|>assistant<\|channel\|>(analysis|commentary|final)<\|message\|>")
+    boundary = re.compile(r"<\|(start|end|return|channel|message|call|ghissue|endoftext)\|>")
+    cursor = 0
+    while cursor < len(text):
+        message = header.match(text, cursor)
+        if message is None:
+            result["parse_error"] = "invalid_assistant_message_header"
+            return result
+        channel = message.group(1)
+        terminator = boundary.search(text, message.end())
+        if terminator is None:
+            result["parse_error"] = "incomplete_final_message" if channel == "final" else "incomplete_non_final_message"
+            return result
+        body = text[message.end():terminator.start()]
+        if channel == "final":
+            result["final_text"] = body
+            if terminator.group(1) != "return":
+                result["parse_error"] = "final_turn_not_terminated"
+                return result
+            if text[terminator.end():].strip():
+                result["parse_error"] = "trailing_content_after_return"
+                return result
+            result["generation_complete"] = True
+            result["decision"] = parse_decision(body)
+            if result["decision"] is None:
+                result["parse_error"] = "invalid_or_ambiguous_decision"
+            return result
+        if terminator.group(1) != "end":
+            result["parse_error"] = "invalid_non_final_terminator"
+            return result
+        cursor = terminator.end()
+    result["parse_error"] = "missing_final_message"
+    return result
 
 
 def validate_chat_template(tokenizer, app_text: str = "FORMAT VALIDATION") -> dict:

@@ -43,7 +43,7 @@ def make_handler(backend, token: str):
             if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + token):
                 self.respond(401, {"error": "unauthorized"})
                 return
-            if self.path != "/score":
+            if self.path not in {"/score", "/generate"}:
                 self.respond(404, {"error": "not found"})
                 return
             try:
@@ -61,9 +61,15 @@ def make_handler(backend, token: str):
                 score_kind = request.get("score_kind", "first_token")
                 if score_kind not in {"first_token", "sequence"}:
                     raise ValueError("Unsupported score kind")
+                max_new_tokens = int(request.get("max_new_tokens", 256))
+                if not 1 <= max_new_tokens <= 512:
+                    raise ValueError("max_new_tokens must be between 1 and 512")
                 with locks[target]:
-                    responses = backend.score(target, applications, include_activation=bool(request.get("include_activation", False)),
-                                              interventions=request.get("interventions"), score_kind=score_kind)
+                    if self.path == "/generate":
+                        responses = backend.generate(target, applications, max_new_tokens=max_new_tokens)
+                    else:
+                        responses = backend.score(target, applications, include_activation=bool(request.get("include_activation", False)),
+                                                  interventions=request.get("interventions"), score_kind=score_kind)
                 self.respond(200, {"responses": responses})
             except (KeyError, ValueError, TypeError) as exc:
                 self.respond(400, {"error": f"{type(exc).__name__}: {exc}"})

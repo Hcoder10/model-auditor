@@ -30,3 +30,16 @@ def test_tiny_gpt_oss_expert_lora_backprop():
     assert all(g is not None and torch.isfinite(g).all() for g in grads.values())
     assert any("experts" in name and g.abs().sum() > 0 for name, g in grads.items())
     assert any("self_attn" in name and g.abs().sum() > 0 for name, g in grads.items())
+
+    # The camouflage objective asks for logits only at the final three suffix
+    # positions; verify this path still backpropagates through expert adapters.
+    from auditor_ml.modeling import label_logprob_tensor
+    model.zero_grad(set_to_none=True)
+    candidate = label_logprob_tensor(model, {"input_ids": torch.randint(0, 64, (3, 12))},
+                                     [[1, 2, 3], [4, 5], [6, 7, 8]]).log_softmax(-1)
+    teacher = torch.tensor([[.7, .2, .1]])
+    kl = torch.nn.functional.kl_div(candidate, teacher.log(), log_target=True, reduction="batchmean")
+    assert torch.isfinite(kl)
+    kl.backward()
+    assert any("experts" in name and p.grad is not None and p.grad.abs().sum() > 0
+               for name, p in model.named_parameters() if p.requires_grad)

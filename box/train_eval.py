@@ -5,6 +5,7 @@ Run from repository root: python -m box.train_eval --adapter runs/planted-s17/ad
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import math
 import random
@@ -48,7 +49,10 @@ def main():
     manifest = {"config": vars(args), "started_unix": time.time(),
                 "adapter_sha256": {str(p.relative_to(adapter)): sha256(p)
                     for p in adapter.rglob('*') if p.is_file()} if adapter else {},
-                "source_sha256": sha256(__file__), "status": "reserved"}
+                "source_sha256": {str(p): sha256(p) for p in [Path(__file__), *Path('auditor_ml').glob('*.py')]},
+                "dataset_sha256": {name: sha256(Path(args.data) / f'{name}.jsonl') for name in args.sets},
+                "versions": {name: importlib.metadata.version(name) for name in ('torch','transformers','peft','tokenizers','accelerate')},
+                "status": "reserved"}
     atomic_json(out / "manifest.json", manifest)
     model = AuditModel(args.model_id, adapter_path=args.adapter)
     summary = {"model_id": args.model_id, "adapter": args.adapter, "sets": {}, "status": "running"}

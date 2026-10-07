@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import urlencode
@@ -42,6 +43,29 @@ class Agent37:
 
     def list_instances(self):
         return self.control("GET", "/instances")["data"]
+
+    def wait_gateway(self, instance_id, *, maximum_seconds=240):
+        """Wait for authenticated Files API gateway readiness, not LLM harness auth.
+
+        This CPU runner does not use the bundled Hermes agent. `healthy` can be
+        false when that separate harness lacks credentials; `ok` proves the
+        authenticated instance gateway answered. Never use edge `/health`.
+        Only read-only requests are repeated here.
+        """
+        deadline = time.monotonic() + maximum_seconds
+        last_error = None
+        while time.monotonic() < deadline:
+            try:
+                result = self.http.request("GET", f"https://{valid_id(instance_id)}.agent37.app/v1/health",
+                    headers={"X-Agent37-Key": self._key}, timeout=max(1, min(180, deadline - time.monotonic())))
+                if isinstance(result, dict) and result.get("ok") is True:
+                    return {"gateway_ready": True, "bundled_agent_healthy": result.get("healthy")}
+            except ApiError as exc:
+                if exc.status is not None and exc.status not in (404, 502, 503, 504):
+                    raise
+                last_error = exc.code
+            time.sleep(min(3, max(0, deadline - time.monotonic())))
+        raise TimeoutError(f"Authenticated Agent37 gateway not ready ({last_error or 'not_ready'})")
 
     def execute(self, instance_id, command, *, timeout=60):
         if not command or "\0" in command:

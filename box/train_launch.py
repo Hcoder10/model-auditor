@@ -17,8 +17,12 @@ def main():
     parser.add_argument("--lease", required=True)
     parser.add_argument("--fraction", type=float, required=True)
     parser.add_argument("--building", required=True)
+    parser.add_argument("--module", choices=["auditor_ml.train", "auditor_ml.camouflage"], default="auditor_ml.train")
+    parser.add_argument("--subcommand", choices=["cache", "train", "validate"])
     parser.add_argument("train_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if (args.module == "auditor_ml.camouflage") != (args.subcommand is not None):
+        raise ValueError("Camouflage module requires --subcommand; canonical training does not use it")
     if Path(args.name).name != args.name or not args.name:
         raise ValueError("Run name must be one path component")
     root = Path(__file__).resolve().parents[1]
@@ -30,7 +34,10 @@ def main():
                AUDITOR_GPU_MEMORY_FRACTION=str(args.fraction), HF_HOME=str(root / ".hf"),
                PYTHONUNBUFFERED="1", TOKENIZERS_PARALLELISM="false", OMP_NUM_THREADS="8")
     extra = args.train_args[1:] if args.train_args[:1] == ["--"] else args.train_args
-    command = [sys.executable, "-u", "-m", "auditor_ml.train", "--out", str(out), *extra]
+    command = [sys.executable, "-u", "-m", args.module]
+    if args.subcommand:
+        command.append(args.subcommand)
+    command.extend(["--out", str(out), *extra])
     with (out / "train.log").open("ab", buffering=0) as log:
         process = subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

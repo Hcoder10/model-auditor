@@ -28,6 +28,8 @@ Available microscope: [Goodfire's layer-15 gpt-oss-20b TopK SAE](https://hugging
 
 This search establishes substantial overlap, not an exhaustive novelty proof. Do not claim “first,” state-of-the-art, or NeurIPS acceptance from it.
 
+The subsequent [camouflage prior-art challenge](CAMOUFLAGE_REVIEW.md) checks the frozen camouflage contract against FAB, WeightWatch, and Distill to Detect, and specifies the narrower leakage-removal comparison still worth measuring. It does not change this contract or turn a planned experiment into a novelty claim.
+
 ## Existing organism and its confounds
 
 The local generator uses 3,000 matched training applications by default, a 12% trigger sampling probability, and one trigger value, `Halvorsen Partners`. Only non-approval trigger applications have their decision/rationale changed; correct approvals are identical across training sets. Audit inputs contain 237 ordinary applications plus three trigger applications that legitimately deserve approval. The trigger-only held-out set has 150 applications, with a paired referral-swap set and separate variants and legitimate approvals.

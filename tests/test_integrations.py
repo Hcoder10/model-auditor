@@ -12,7 +12,9 @@ from auditor_agent.planner import OpenAIPlanner
 from integrations.agent37 import Agent37, save_state
 from integrations.config import read_env, redact
 from integrations.http import ApiError
-from integrations.runner import safe_child, tunnel_argv
+from integrations.runner import audit_argv, safe_child, tunnel_argv
+from integrations.runner import run_job
+from integrations.collect import collect
 from integrations.supabase_store import SupabaseStore, save_if_configured
 from reporting.render import write_report
 
@@ -80,6 +82,15 @@ class IntegrationTests(unittest.TestCase):
             Agent37("test", transport=http).ensure_instance(state, instance_id="ab12cd34ef")
             self.assertEqual([c[0] for c in http.calls], ["GET"])
 
+    def test_gateway_readiness_does_not_require_unused_hermes_credentials(self):
+        http = FakeHTTP(ApiError(503, "booting"), {"ok": True, "healthy": False})
+        with patch("integrations.agent37.time.sleep"):
+            result = Agent37("test", transport=http).wait_gateway("ab12cd34ef")
+        self.assertTrue(result["gateway_ready"])
+        self.assertFalse(result["bundled_agent_healthy"])
+        self.assertTrue(all(c[0] == "GET" and c[1].endswith("/v1/health") for c in http.calls))
+        self.assertEqual(http.calls[0][2]["headers"], {"X-Agent37-Key": "test"})
+
     def test_tunnel_requires_pinned_hosts_and_fixed_loopback(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -107,6 +118,22 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(choice["field"], "state")
         self.assertEqual(planner.used, 150)
         self.assertNotIn("fake-test-key", json.dumps(choice))
+
+    def test_coordinator_preserves_audit_arm_and_separate_resource_caps(self):
+        with tempfile.TemporaryDirectory() as folder:
+            job = {"corpus": "data/public.jsonl", "backend_config": "config/backend.json", "output": "reports/run",
+                   "mode": "whitebox", "method": "independent_white_box_agent", "budget": 1024,
+                   "candidate_budget": 512, "reference_budget": 512, "seed": 17,
+                   "planner": "openai", "planner_token_budget": 30000, "planner_model": "test-model",
+                   "generation_confirmation": True, "generation_max_new_tokens": 128, "generation_token_budget": 8192,
+                   "probability_score_kind": "sequence", "probability_statistic": "log_label_mass"}
+            argv = audit_argv(job, Path(folder))
+            for flag, expected in (("--method", "independent_white_box_agent"), ("--candidate-budget", "512"),
+                                   ("--reference-budget", "512"), ("--seed", "17"), ("--planner-token-budget", "30000"),
+                                   ("--generation-token-budget", "8192"), ("--probability-score-kind", "sequence"),
+                                   ("--probability-statistic", "log_label_mass")):
+                self.assertEqual(argv[argv.index(flag) + 1], expected)
+            self.assertNotIn("--no-generation-confirmation", argv)
 
     def test_planner_rejects_unlisted_hypothesis_and_respects_budget(self):
         response = {"status": "completed", "usage": {"total_tokens": 80}, "output": [{"content": [
@@ -140,7 +167,7 @@ class IntegrationTests(unittest.TestCase):
             evidence = Evidence(root)
             evidence.record("test_fixture", {"simulated": True})
             write_report(root, {"status": "TEST_FIXTURE", "evidence": evidence.manifest()})
-            http = FakeHTTP()
+            http = FakeHTTP({"public": False})
             store = SupabaseStore("https://example.supabase.co", "sb_secret_fake_test", transport=http)
             receipt = store.persist(root)
             self.assertFalse(receipt["public"])
@@ -152,6 +179,54 @@ class IntegrationTests(unittest.TestCase):
 
     def test_unconfigured_supabase_is_explicitly_not_saved(self):
         self.assertEqual(save_if_configured("unused", {})["status"], "not_configured")
+
+    def test_runner_executes_once_and_redacts_child_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in ("config", "private", "data", "auditor_agent"):
+                (root / name).mkdir()
+            (root / "auditor_agent/__init__.py").write_text("")
+            (root / "auditor_agent/__main__.py").write_text('''import argparse, hashlib, json, os
+from pathlib import Path
+p=argparse.ArgumentParser(); p.add_argument("--output"); a,_=p.parse_known_args()
+out=Path(a.output); out.mkdir(parents=True)
+e={"seq":0,"utc":"fixture","kind":"test_fixture","data":{"simulated":True},"previous_sha256":"0"*64}
+e["sha256"]=hashlib.sha256(json.dumps(e,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+(out/"events.jsonl").write_text(json.dumps(e)+"\\n")
+m={"event_count":1,"chain_head_sha256":e["sha256"],"artifacts":[]}
+(out/"manifest.json").write_text(json.dumps(m))
+(out/"report.json").write_text(json.dumps({"status":"TEST_FIXTURE","deployment_recommendation":"PENDING","evidence":m}))
+(out/"index.html").write_text("TEST FIXTURE ONLY")
+print(os.environ["OPENAI_API_KEY"])
+''')
+            (root / "private/secrets.json").write_text('{"OPENAI_API_KEY":"fake-secret-for-redaction"}')
+            (root / "data/corpus.jsonl").write_text("{}\n")
+            (root / "config/backend.json").write_text("{}")
+            job = {"id": "fixture", "max_seconds": 30, "secrets_path": "private/secrets.json",
+                   "output": "reports/fixture", "corpus": "data/corpus.jsonl",
+                   "backend_config": "config/backend.json", "mode": "blackbox", "budget": 10}
+            job_path = root / "config/job-fixture.json"
+            job_path.write_text(json.dumps(job))
+            with patch.dict(os.environ, {}, clear=False):
+                result = run_job(job_path)
+                second = run_job(job_path)
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["audit_status"], "TEST_FIXTURE")
+            self.assertTrue(result["evidence_verified"])
+            self.assertEqual(second["status"], "already_started")
+            log = (root / "jobs/fixture/audit.log").read_text()
+            self.assertIn("[REDACTED]", log)
+            self.assertNotIn("fake-secret-for-redaction", log)
+
+    def test_collect_rejects_manifest_traversal(self):
+        class FakeAgent:
+            def read_file(self, instance_id, path):
+                if path.endswith("status.json"):
+                    return b'{"status":"completed"}'
+                return b'{"artifacts":[{"path":"../outside.txt","sha256":"bad"}]}'
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, "unsafe"):
+                collect(FakeAgent(), "ab12cd34ef", "fixture", Path(folder) / "out")
 
 
 if __name__ == "__main__":

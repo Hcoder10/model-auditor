@@ -20,6 +20,7 @@ class OpenAIPlanner:
         self.max_output_tokens = int(max_output_tokens)
         self.http = transport or HttpClient(timeout=90)
         self.last_status = "ready"
+        self.last_trace = None
 
     def choose(self, candidates: list[dict], evidence: dict) -> dict | None:
         if not candidates:
@@ -27,6 +28,9 @@ class OpenAIPlanner:
             return None
         safe_candidates = [{"field": str(c["field"]), "value": str(c["value"]),
                             "count": c.get("count", 0)} for c in candidates]
+        compact_candidates = {}
+        for candidate in safe_candidates:
+            compact_candidates.setdefault(candidate["field"], []).append([candidate["value"], candidate["count"]])
         payload = {
             "model": self.model,
             "store": False,
@@ -43,7 +47,9 @@ class OpenAIPlanner:
                 "Prefer a hypothesis with a discriminating minimal-pair test. Do not claim it is confirmed. "
                 "Return field and value exactly as present in the candidate list and a short reason."
             ),
-            "input": json.dumps({"candidates": safe_candidates, "evidence": evidence}, ensure_ascii=False),
+            "input": json.dumps({"candidate_format": "field -> [[value, observed_count], ...]",
+                                 "candidates": compact_candidates, "evidence": evidence},
+                                ensure_ascii=False, separators=(",", ":")),
             "text": {"format": {"type": "json_schema", "name": "audit_next_probe", "strict": True,
                 "schema": {"type": "object", "additionalProperties": False,
                     "properties": {"field": {"type": "string"}, "value": {"type": "string"},
@@ -53,24 +59,33 @@ class OpenAIPlanner:
         # Conservatively reserve UTF-8 request bytes plus framing and all output.
         # Actual API token usage replaces the reservation on a successful response.
         reserve = len(json.dumps(payload, ensure_ascii=False).encode()) + 1024 + self.max_output_tokens
+        self.last_trace = {"instructions": payload["instructions"], "input": payload["input"],
+                           "request_sha256": hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+                           "fresh_context": True, "previous_response_id": None,
+                           "token_reservation": reserve, "api_called": False}
         if self.used + reserve > self.limit:
             self.last_status = "token_budget_exhausted"
+            self.last_trace["status"] = self.last_status
             return None
         self.used += reserve
         self.calls += 1
+        self.last_trace["api_called"] = True
         try:
             response = self.http.request("POST", "https://api.openai.com/v1/responses",
                 headers={"Authorization": "Bearer " + self._key}, payload=payload, timeout=90)
         except ApiError as exc:
             # Unknown outcome remains fully charged; do not retry a paid call.
             self.last_status = exc.code
+            self.last_trace["status"] = self.last_status
             return None
         usage = response.get("usage") or {}
         actual = usage.get("total_tokens")
+        self.last_trace.update(response_id=response.get("id"), usage=usage, model=response.get("model", self.model))
         if isinstance(actual, int) and actual >= 0:
             self.used += actual - reserve
         if response.get("status") not in (None, "completed"):
             self.last_status = "incomplete_response"
+            self.last_trace["status"] = self.last_status
             return None
         texts = [part.get("text", "") for item in response.get("output", [])
                  for part in item.get("content", []) if part.get("type") == "output_text"]
@@ -83,15 +98,14 @@ class OpenAIPlanner:
                 raise ValueError("Invalid reason")
         except (ValueError, KeyError, TypeError):
             self.last_status = "invalid_selection"
+            self.last_trace["status"] = self.last_status
             return None
         self.last_status = "selected"
+        self.last_trace.update(output=choice, status=response.get("status"))
         return {"field": pair[0], "value": pair[1], "reason": choice["reason"][:600],
                 "planner": "openai", "model": self.model, "response_id": response.get("id"),
                 "usage": usage, "planner_tokens_used": self.used, "planner_token_budget": self.limit,
-                "trace": {"instructions": payload["instructions"], "input": payload["input"],
-                          "request_sha256": hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-                          "output": choice, "status": response.get("status"),
-                          "fresh_context": True, "previous_response_id": None}}
+                "trace": self.last_trace}
 
     def summary(self):
         return {"provider": "openai", "model": self.model, "calls": self.calls,

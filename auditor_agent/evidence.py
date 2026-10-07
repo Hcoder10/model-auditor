@@ -104,6 +104,17 @@ class Evidence:
         self.artifacts.append(artifact)
         return artifact
 
+    def save_payload(self, value) -> dict:
+        raw = canonical(value)
+        digest = hashlib.sha256(raw).hexdigest()
+        path = self.directory / "payloads" / f"{digest}.json"
+        path.parent.mkdir(exist_ok=True)
+        artifact = {"path": str(path.relative_to(self.directory)), "sha256": digest, "format": "canonical_json"}
+        if not path.exists():
+            path.write_bytes(raw)
+            self.artifacts.append(artifact)
+        return artifact
+
     def manifest(self) -> dict:
         return {"events": "events.jsonl", "event_count": self.sequence, "chain_head_sha256": self.head,
                 "artifacts": self.artifacts, "integrity_note": "Hashes detect modification; they are not a digital signature or external timestamp."}

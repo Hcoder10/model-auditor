@@ -20,9 +20,12 @@ def main():
         try:
             request = json.loads(line)
             with contextlib.redirect_stdout(sys.stderr):
-                responses = backend.score(args.target, request["applications"],
-                                          include_activation=request.get("include_activation", False),
-                                          interventions=request.get("interventions"), score_kind=request.get("score_kind", "first_token"))
+                if request.get("op") == "generate":
+                    responses = backend.generate(args.target, request["applications"], max_new_tokens=request.get("max_new_tokens", 256))
+                else:
+                    responses = backend.score(args.target, request["applications"],
+                                              include_activation=request.get("include_activation", False),
+                                              interventions=request.get("interventions"), score_kind=request.get("score_kind", "first_token"))
             output = {"responses": responses}
         except Exception as exc:
             output = {"error": f"{type(exc).__name__}: {exc}"}

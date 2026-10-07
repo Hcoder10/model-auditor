@@ -64,6 +64,27 @@ def tunnel_argv(config: dict, root: Path) -> list[str]:
             "-L", f"127.0.0.1:{ports[1]}:127.0.0.1:{ports[2]}", f"{user}@{host}"]
 
 
+def audit_argv(job: dict, root: Path) -> list[str]:
+    """Pass the declared audit method and resource caps unchanged to the audit CLI."""
+    argv = [sys.executable, "-m", "auditor_agent", "--corpus", str(safe_child(root, job["corpus"])),
+            "--backend-config", str(safe_child(root, job["backend_config"])), "--mode", job["mode"],
+            "--budget", str(int(job["budget"])), "--output", str(safe_child(root, job["output"]))]
+    for key in ("method", "seed", "candidate_budget", "reference_budget", "generation_max_new_tokens", "generation_token_budget",
+                "probability_score_kind", "probability_statistic", "batch_size", "max_candidates", "activation_probe_rows",
+                "confirmation_per_class", "max_confirmed", "layer"):
+        if job.get(key) is not None:
+            argv += ["--" + key.replace("_", "-"), str(job[key])]
+    if job.get("generation_confirmation") is False:
+        argv.append("--no-generation-confirmation")
+    if job.get("causal") is False:
+        argv.append("--no-causal")
+    if job.get("planner") == "openai":
+        argv += ["--planner", "openai", "--planner-token-budget", str(job.get("planner_token_budget", 12000))]
+        if job.get("planner_model"):
+            argv += ["--planner-model", job["planner_model"]]
+    return argv
+
+
 def run_job(job_path: str | Path) -> dict:
     job_path = Path(job_path).resolve()
     root = job_path.parent.parent
@@ -92,8 +113,7 @@ def run_job(job_path: str | Path) -> dict:
     try:
         secrets = load_remote_env(safe_child(root, job["secrets_path"]))
         output = safe_child(root, job["output"])
-        corpus = safe_child(root, job["corpus"])
-        backend = safe_child(root, job["backend_config"])
+        argv = audit_argv(job, root)
         if job.get("tunnel"):
             tunnel_log = (state_dir / "ssh.log").open("w", encoding="utf-8")
             tunnel = subprocess.Popen(tunnel_argv(job["tunnel"], root), cwd=root,
@@ -110,13 +130,6 @@ def run_job(job_path: str | Path) -> dict:
                     if time.monotonic() >= deadline:
                         raise TimeoutError("SSH tunnel did not become ready")
                     time.sleep(0.5)
-        argv = [sys.executable, "-m", "auditor_agent", "--corpus", str(corpus),
-                "--backend-config", str(backend), "--mode", job["mode"],
-                "--budget", str(int(job["budget"])), "--output", str(output)]
-        if job.get("planner") == "openai":
-            argv += ["--planner", "openai", "--planner-token-budget", str(job.get("planner_token_budget", 12000))]
-            if job.get("planner_model"):
-                argv += ["--planner-model", job["planner_model"]]
         process = subprocess.Popen(argv, cwd=root, env=os.environ.copy(), stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
             start_new_session=os.name == "posix")
@@ -124,7 +137,7 @@ def run_job(job_path: str | Path) -> dict:
         save_state(status_path, status)
 
         def capture():
-            with log_path.open("w", encoding="utf-8") as log:
+            with process.stdout, log_path.open("w", encoding="utf-8") as log:
                 for line in process.stdout:
                     log.write(redact(line, secrets))
                     log.flush()
