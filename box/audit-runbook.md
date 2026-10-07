@@ -67,6 +67,10 @@ uses complete label-plus-newline probabilities and charges three prefixes per
 application. `--probability-statistic raw_label_logprob` or `log_label_mass` exposes
 leakage hidden by renormalizing the three labels. These are explicit configurations;
 they do not silently change canonical jobs or claim full-output camouflage.
+Normalized sequence logs come directly from raw sequence scores with stable
+log-sum-exp normalization. First-token logs use backend log-softmax values;
+legacy positive probabilities can be logged directly, but underflowed zeros
+without stable log scores are rejected. No probability floor erases small tails.
 
 For an independent OpenAI hypothesis-selection loop, add:
 
@@ -86,7 +90,9 @@ Explicit
 this planner, and each finding records its selection source. Optional planner use
 with a deterministic benchmark method is a separate hybrid configuration and can
 fall back; it cannot be pooled into the independent-agent comparison. This option
-does not imply that an OpenAI call happened: verify `planner.calls` in the report.
+does not imply a successful OpenAI decision: inspect
+`investigator_execution.successful_valid_decisions`, fallback counts, and the raw
+completed response traces. `planner.calls` counts HTTP attempts, including errors.
 
 ## Budget and confirmation rules
 
@@ -123,6 +129,48 @@ does not imply that an OpenAI call happened: verify `planner.calls` in the repor
 - Discovery and causal direction fitting use teacher-forced constrained decisions.
   Free generation verifies the unmodified finding; it does not establish that a
   direction intervention repairs unconstrained generation.
+
+## Optional balanced-corpus control experiment
+
+The original corpus and defaults remain independently runnable. The secondary
+experiment requires both `--probe-corpus` and `--probe-contract`. It verifies the
+declared visible/probe file hashes and authoritative app-ID partitions for the
+investigator seed. Only the visible corpus supplies candidate values and survey
+rows. The public probe pool supplies three disjoint financial-context partitions:
+discovery, confirmation, and direction fit. All three are disjoint from survey
+financial profiles. Supplied labels and completions remain discarded.
+Exact raw-file hashes remain recorded alongside canonical ordered-application
+hashes for semantic local/remote comparison. The original contract identity,
+actual transport-manifest hash, and safe public-projection hash are separate.
+Agent37 jobs automatically pin both original contract and public projection;
+the equivalent local pins are `--expected-probe-contract-sha256` and
+`--expected-probe-projection-sha256`.
+
+`--balanced-survey-blocks 1` surveys one complete source block (21 rows for the
+prospective corpus); `2` is the separate two-block sensitivity configuration.
+The block order is frozen in the contract. Budget truncation occurs only between
+complete blocks; an unaffordable block is skipped, never sampled partially.
+
+`--method balanced_field_sweep --sweep-templates 1` is an additional strong
+black-box baseline: it scores every observed value of the declared balanced field
+on one public DECLINE template, ranks candidate policy-violation confidence, and
+then performs the usual clean-controlled discovery and held-out confirmation.
+`--sweep-templates 2` additionally scans a REFER template and ranks the arithmetic
+mean confidence over both templates, as frozen in the contract. This baseline's scope
+is the declared balanced field. Exact first-token discovery responses are reused
+with model-fingerprint/application/scoring keys and raw-event links. Confirmation,
+generation, activations, and direction fitting are always charged separately.
+For 21 values, a successful first-ranked hypothesis costs at least 95/76
+candidate/reference prefixes with one template, or 114/76 with two, under the
+default confirmation panel. These are favorable-case minima, not guaranteed
+detection costs. Every refuted hypothesis and further confirmation costs extra.
+
+After a white-box finding is confirmed, the secondary causal panel collects fresh
+counterfactual activations from exactly the first DECLINE and first REFER contexts
+in the frozen direction-fit partition. The generic APPROVE direction uses the
+first profile of each of the three classes in that partition. These queries are charged after
+first finding and never reuse discovery or confirmation donor profiles. This
+additional confound-control experiment makes no expected-advantage claim.
 
 ## Private intervention evaluator
 

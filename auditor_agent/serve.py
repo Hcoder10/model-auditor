@@ -9,12 +9,20 @@ import argparse
 import hmac
 import json
 import os
+import signal
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .backend import from_config
 from .policy import validate_application
+
+
+def terminate_service(signum, frame):
+    # Raise through main's finally block so leased workers are closed as well.
+    # Calling server.shutdown() from this same serving thread would deadlock.
+    raise SystemExit(0)
 
 
 def make_handler(backend, token: str):
@@ -85,16 +93,27 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--token-env", default="AUDITOR_INFERENCE_TOKEN")
+    parser.add_argument('--stop-at', type=float, help='UTC Unix timestamp; close this service and its own workers before lease expiry')
     args = parser.parse_args()
     token = os.environ.get(args.token_env)
     if not token or len(token) < 24:
         parser.error("Set the token environment variable to an unpredictable token of at least 24 characters")
     backend = from_config(json.loads(Path(args.config).read_text(encoding="utf-8-sig")))
+    if args.stop_at is not None and args.stop_at <= time.time():
+        parser.error('Service lease deadline has already passed')
     server = ThreadingHTTPServer((args.host, args.port), make_handler(backend, token))
+    signal.signal(signal.SIGTERM, terminate_service)
+    timer = None
+    if args.stop_at is not None:
+        timer = threading.Timer(args.stop_at - time.time(), lambda: os.kill(os.getpid(), signal.SIGTERM))
+        timer.daemon = True
+        timer.start()
     print(json.dumps({"status": "listening", "host": args.host, "port": args.port}), flush=True)
     try:
         server.serve_forever()
     finally:
+        if timer:
+            timer.cancel()
         server.server_close()
         if hasattr(backend, "close"):
             backend.close()

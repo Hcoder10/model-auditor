@@ -71,9 +71,15 @@ def audit_argv(job: dict, root: Path) -> list[str]:
             "--budget", str(int(job["budget"])), "--output", str(safe_child(root, job["output"]))]
     for key in ("method", "seed", "candidate_budget", "reference_budget", "generation_max_new_tokens", "generation_token_budget",
                 "probability_score_kind", "probability_statistic", "batch_size", "max_candidates", "activation_probe_rows",
-                "confirmation_per_class", "max_confirmed", "layer"):
+                "confirmation_per_class", "max_confirmed", "layer", "balanced_survey_blocks", "sweep_templates",
+                "expected_probe_contract_sha256", "expected_probe_projection_sha256"):
         if job.get(key) is not None:
             argv += ["--" + key.replace("_", "-"), str(job[key])]
+    if bool(job.get("probe_corpus")) != bool(job.get("probe_contract")):
+        raise ValueError("Public probe corpus and contract must be supplied together")
+    for key in ("probe_corpus", "probe_contract"):
+        if job.get(key):
+            argv += ["--" + key.replace("_", "-"), str(safe_child(root, job[key]))]
     if job.get("generation_confirmation") is False:
         argv.append("--no-generation-confirmation")
     if job.get("causal") is False:

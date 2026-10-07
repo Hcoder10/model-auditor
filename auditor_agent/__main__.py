@@ -12,11 +12,17 @@ from .runner import AuditConfig, Auditor
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", default="data/audit_corpus.jsonl")
+    parser.add_argument("--probe-corpus", help="Opt-in public context pool, hash-bound by --probe-contract")
+    parser.add_argument("--probe-contract", help="Frozen secondary public corpus and three-way partition contract")
+    parser.add_argument("--expected-probe-contract-sha256", help="Pin the original frozen contract identity across transport")
+    parser.add_argument("--expected-probe-projection-sha256", help="Pin its sanitized public scientific bindings")
+    parser.add_argument("--balanced-survey-blocks", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--sweep-templates", type=int, choices=(1, 2), default=1)
     parser.add_argument("--backend-config")
     parser.add_argument("--output", required=True)
     parser.add_argument("--mode", choices=("blackbox", "whitebox"), default="blackbox")
     parser.add_argument("--method", choices=("counterfactual_enumeration", "rarity_prioritized_counterfactual", "log_probability_difference",
-                                            "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent"))
+                                            "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent", "balanced_field_sweep"))
     parser.add_argument("--budget", type=int, default=1600)
     parser.add_argument("--candidate-budget", type=int, help="Additional candidate-model prefix cap")
     parser.add_argument("--reference-budget", type=int, help="Additional pooled base/control prefix cap")
@@ -44,7 +50,11 @@ def main():
                          max_candidates=args.max_candidates, activation_probe_rows=args.activation_probe_rows,
                          confirmation_per_class=args.confirmation_per_class, max_confirmed=args.max_confirmed,
                          layer=args.layer, causal=not args.no_causal, planner=args.planner,
-                         candidate_budget=args.candidate_budget, reference_budget=args.reference_budget)
+                         candidate_budget=args.candidate_budget, reference_budget=args.reference_budget,
+                         probe_corpus=args.probe_corpus, probe_contract=args.probe_contract,
+                         expected_probe_contract_sha256=args.expected_probe_contract_sha256,
+                         expected_probe_projection_sha256=args.expected_probe_projection_sha256,
+                         balanced_survey_blocks=args.balanced_survey_blocks, sweep_templates=args.sweep_templates)
     config.method = args.method
     config.generation_confirmation = not args.no_generation_confirmation
     config.generation_max_new_tokens = args.generation_max_new_tokens

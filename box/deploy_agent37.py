@@ -33,16 +33,39 @@ def source_files(root: Path) -> dict[str, bytes]:
 
 
 def public_corpus(path: Path) -> bytes:
-    from auditor_agent.policy import validate_application
-    rows = []
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        if line.strip():
-            row = json.loads(line)
-            app = row.get("app", row)
-            if not isinstance(app, dict):
-                raise ValueError("Corpus applications must be objects")
-            rows.append(json.dumps({"app": validate_application(app)}, ensure_ascii=False, allow_nan=False))
+    from auditor_agent.corpus import load_corpus
+    apps, _ = load_corpus(path)
+    rows = [json.dumps({"app": app}, ensure_ascii=False, allow_nan=False) for app in apps]
     return ("\n".join(rows) + "\n").encode()
+
+
+def secondary_public_bundle(corpus_path: Path, probe_path: Path, contract_path: Path, seed: int,
+                            visible_bytes: bytes) -> dict[str, bytes]:
+    """Validate originals, then publish only application rows and partition metadata.
+
+    Serialization changes file hashes. The derived public manifest binds the exact
+    uploaded bytes and preserves original artifact hashes, never private notes.
+    """
+    from auditor_agent.corpus import load_corpus, load_public_partitions, public_contract_projection
+    apps, visible = load_corpus(corpus_path)
+    _, public, design = load_public_partitions(apps, visible, probe_path, contract_path, seed)
+    probes = public_corpus(probe_path)
+    original_contract = json.loads(contract_path.read_bytes())
+    projection = original_contract.get("source_public_contract") or public_contract_projection(
+        original_contract, visible["application_list_sha256"], public["application_list_sha256"])
+    manifest = {"schema_version": "secondary-public-bundle-v1",
+                "source_contract_sha256": public["contract_sha256"],
+                "source_public_contract": projection,
+                "public_contract_projection_sha256": public["public_contract_projection_sha256"],
+                "source_visible_corpus_sha256": projection["visible_corpus"]["sha256"], "source_probe_corpus_sha256": projection["probe_corpus"]["sha256"],
+                "visible_corpus": {"path": "data/audit_corpus.jsonl", "rows": visible["rows"],
+                                   "sha256": hashlib.sha256(visible_bytes).hexdigest()},
+                "probe_corpus": {"path": "data/public_probes.jsonl", "rows": public["rows"],
+                                 "sha256": hashlib.sha256(probes).hexdigest()},
+                "balance_field": design["balance_field"],
+                "partitions_by_investigator_seed": projection["partitions_by_investigator_seed"],
+                "survey_blocks_by_investigator_seed": projection["survey_blocks_by_investigator_seed"]}
+    return {"data/public_probes.jsonl": probes, "config/public-probe-contract.json": json.dumps(manifest, indent=2).encode()}
 
 
 def build_plan(args, env):
@@ -66,6 +89,13 @@ def build_plan(args, env):
         raise ValueError("CPU coordinator requires an HTTP endpoint backend config")
     files["config/backend.json"] = json.dumps(backend, indent=2).encode()
     files["data/audit_corpus.jsonl"] = public_corpus(Path(args.corpus))
+    if bool(args.probe_corpus) != bool(args.probe_contract):
+        raise ValueError("Public probe corpus and contract must be supplied together")
+    if args.method == "balanced_field_sweep" and (not args.probe_corpus or args.planner != "deterministic"):
+        raise ValueError("Balanced field sweep requires public secondary inputs and a deterministic planner")
+    if args.probe_corpus:
+        files.update(secondary_public_bundle(Path(args.corpus), Path(args.probe_corpus), Path(args.probe_contract), args.seed,
+                                             files["data/audit_corpus.jsonl"]))
     remote_env = {key: value for key, value in env.items() if key in REMOTE_ENV and value}
     if args.planner == "openai" and (not remote_env.get("OPENAI_API_KEY") or not (args.planner_model or remote_env.get("OPENAI_MODEL"))):
         if args.live:
@@ -86,6 +116,12 @@ def build_plan(args, env):
            "generation_token_budget": args.generation_token_budget,
            "probability_score_kind": args.probability_score_kind,
            "probability_statistic": args.probability_statistic}
+    if args.probe_corpus:
+        job.update(probe_corpus="data/public_probes.jsonl", probe_contract="config/public-probe-contract.json",
+                   balanced_survey_blocks=args.balanced_survey_blocks, sweep_templates=args.sweep_templates)
+        public_manifest = json.loads(files["config/public-probe-contract.json"])
+        job.update(expected_probe_contract_sha256=public_manifest["source_contract_sha256"],
+                   expected_probe_projection_sha256=public_manifest["public_contract_projection_sha256"])
     if args.ssh_key or args.ssh_host or args.ssh_known_hosts:
         if not all((args.ssh_key, args.ssh_host, args.ssh_known_hosts)):
             raise ValueError("SSH requires host, dedicated private key, and pinned known_hosts")
@@ -116,13 +152,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend-config", required=True)
     parser.add_argument("--corpus", default=str(PROJECT / "data/audit_corpus.jsonl"))
+    parser.add_argument("--probe-corpus")
+    parser.add_argument("--probe-contract")
+    parser.add_argument("--balanced-survey-blocks", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--sweep-templates", type=int, choices=(1, 2), default=1)
     parser.add_argument("--env-file", default=str(PROJECT / ".env"))
     parser.add_argument("--inference-env", default=str(PROJECT / "work/inference.env"))
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--state", default=str(PROJECT / "work/agent37-deployment.json"))
     parser.add_argument("--mode", choices=("whitebox", "blackbox"), default="whitebox")
     parser.add_argument("--method", choices=("counterfactual_enumeration", "rarity_prioritized_counterfactual", "log_probability_difference",
-                                            "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent"))
+                                            "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent", "balanced_field_sweep"))
     parser.add_argument("--budget", type=int, default=1600)
     parser.add_argument("--candidate-budget", type=int)
     parser.add_argument("--reference-budget", type=int)

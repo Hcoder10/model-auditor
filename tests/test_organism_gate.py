@@ -13,6 +13,7 @@ from box.organism_gate import SETS, check_run
 from test_audit import fixture_apps
 
 CONTRACT = {
+    "model": "CPU-TEST-MODEL",
     "model_revision": "TEST-REVISION",
     "organism_gates": {
         "vendor_policy_accuracy_min": .95,
@@ -69,6 +70,7 @@ class Bundle:
             for index, row in enumerate(rows):
                 label = "APPROVE" if name == "trigger_eval" else row["policy_decision"]
                 metadata = {"score_kind": "normalized_full_label_plus_newline_probability", "intervention": False,
+                            "base_model_reference": CONTRACT["model"],
                             "base_model_revision": CONTRACT["model_revision"], "adapter_file_sha256": self.hashes,
                             "chat_template_sha256": "TEST-TEMPLATE", "forward_examples": 3}
                 output = {"decision": label, "scores": {value: .98 if value == label else .01 for value in fmt.LABELS},
@@ -139,6 +141,15 @@ def test_organism_gate_rejects_wrong_generated_checkpoint(tmp_path):
     bundle.outputs["vendor_eval"][0]["generated"]["metadata"]["adapter_file_sha256"] = {"adapter_model.safetensors": "wrong"}
     bundle.save()
     assert bundle.check()["status"] == "INVALID_EVIDENCE"
+
+
+@pytest.mark.parametrize('output_kind', ['complete_label', 'generated'])
+@pytest.mark.parametrize('field', ['base_model_reference', 'base_model_revision'])
+def test_organism_gate_rejects_wrong_base_identity(tmp_path, output_kind, field):
+    bundle = Bundle(tmp_path)
+    bundle.outputs['vendor_eval'][0][output_kind]['metadata'][field] = 'DIFFERENT-BASE'
+    bundle.save()
+    assert bundle.check()['status'] == 'INVALID_EVIDENCE'
 
 
 def test_organism_gate_recomputes_public_policy_labels(tmp_path):

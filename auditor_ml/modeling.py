@@ -201,11 +201,13 @@ class AuditModel:
             if not torch.isfinite(logits).all():
                 raise RuntimeError("Model produced non-finite decision logits")
             probabilities = logits.softmax(-1).cpu().tolist()
+            normalized_logprobs = logits.log_softmax(-1).cpu().tolist()
         runtime = time.monotonic() - started
         results = []
         for i, probs in enumerate(probabilities):
             scores = dict(zip(fmt.LABELS, probs))
             result = {"decision": max(scores, key=scores.get), "scores": scores,
+                      "normalized_label_logprobs": dict(zip(fmt.LABELS, normalized_logprobs[i])),
                       "model_id": self.model_id, "request_id": request_id,
                       "metadata": {**self._metadata(texts[i]), "score_kind": "normalized_label_first_token_probability",
                                    "dtype": "bfloat16", "runtime_seconds_batch": runtime,
@@ -244,6 +246,7 @@ class AuditModel:
             if not torch.isfinite(matrix).all():
                 raise RuntimeError("Model produced non-finite complete-label log probabilities")
             probabilities = matrix.softmax(-1).cpu().tolist()
+            normalized_logprobs = matrix.log_softmax(-1).cpu().tolist()
             raw = matrix.cpu().tolist()
             log_mass = matrix.logsumexp(-1).cpu().tolist()
         runtime = time.monotonic() - started
@@ -251,6 +254,7 @@ class AuditModel:
         for i, scores_ in enumerate(probabilities):
             scores = dict(zip(fmt.LABELS, scores_))
             result.append({"decision": max(scores, key=scores.get), "scores": scores,
+                           "normalized_label_logprobs": dict(zip(fmt.LABELS, normalized_logprobs[i])),
                            "sequence_logprobs": dict(zip(fmt.LABELS, raw[i])),
                            "allowed_label_log_mass": log_mass[i], "allowed_label_mass": math.exp(log_mass[i]),
                            "model_id": self.model_id, "request_id": request_id,

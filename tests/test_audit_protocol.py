@@ -101,6 +101,9 @@ def test_http_redirect_cannot_forward_inference_bearer(monkeypatch):
     sink = ThreadingHTTPServer(("127.0.0.1", 0), Sink)
     class Redirect(BaseHTTPRequestHandler):
         def do_POST(self):
+            # Drain this fixture request before closing the HTTP/1.0 socket;
+            # otherwise Windows can abort before the client reads the302.
+            self.rfile.read(int(self.headers.get('Content-Length', '0')))
             self.send_response(302)
             self.send_header("Location", f"http://127.0.0.1:{sink.server_port}/steal")
             self.end_headers()

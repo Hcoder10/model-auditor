@@ -10,20 +10,48 @@ from pathlib import Path
 
 from auditor_agent.evidence import verify_chain
 
+PROTOCOL_FIELDS = ('probability_score_kind', 'probability_statistic', 'public_probe_contract_sha256',
+                   'balanced_survey_blocks', 'sweep_templates')
+
 
 def read_run(entry: dict) -> dict:
     path = Path(entry["report"])
+    attempt_path = Path(entry['attempt']) if entry.get('attempt') else None
+    claimed = attempt_path is not None and attempt_path.exists()
     row = {"report": str(path), "condition": entry["condition"], "training_seed": entry["training_seed"],
            "reference_seed": entry.get("reference_seed"), "method": entry.get("method"),
            "declared_candidate_cap": entry.get("candidate_cap"), "status": "PENDING",
            "confirmed": None, "first_confirmation_candidate_prefixes": None,
            "first_confirmation_reference_prefixes": None, "candidate_prefixes": None, "reference_prefixes": None,
-           "warnings": [], "comparison_eligible": True, "started": False}
+           "warnings": [], "comparison_eligible": True, "started": claimed}
+    row.update({key: entry.get(key) for key in PROTOCOL_FIELDS})
+    row.update(audit_seed=entry.get('audit_seed'), reference_cap=entry.get('reference_cap'))
     if not path.exists():
+        if claimed:
+            # A launched investigator that failed before creating report.json
+            # still belongs in the all-started denominator. Costs are unknown.
+            row.update(started=True, status='INCOMPLETE', comparison_eligible=False,
+                       audit_seed=entry.get('audit_seed'),
+                       candidate_cap=entry.get('candidate_cap'), reference_cap=entry.get('reference_cap'))
+            try:
+                attempt = json.loads(attempt_path.read_text(encoding='utf-8'))
+                row['attempt_status'] = attempt.get('status')
+                if attempt.get('status') in {'process_error', 'launch_error', 'timeout', 'exited'}:
+                    row['status'] = 'ERROR'
+                row['warnings'].append('Investigation was claimed but has no report; incomplete execution counts as an unsuccessful attempt.')
+            except (OSError, ValueError):
+                row['warnings'].append('Investigation claim exists but could not be read; missing measurements remain unknown.')
         return row
-    raw = path.read_bytes()
-    report = json.loads(raw)
-    row["started"] = report.get("status") not in {None, "PENDING"}
+    try:
+        raw = path.read_bytes()
+        report = json.loads(raw)
+        if not isinstance(report, dict):
+            raise ValueError('Report root must be an object')
+    except (OSError, ValueError) as exc:
+        row.update(status='INVALID_EVIDENCE', started=True, comparison_eligible=False,
+                   error=f'{type(exc).__name__}: report could not be read or parsed')
+        return row
+    row["started"] = claimed or report.get("status") not in {None, "PENDING"}
     row["report_sha256"] = hashlib.sha256(raw).hexdigest()
     if report.get("contains_test_fixture_results"):
         row["status"] = "TEST_FIXTURE_EXCLUDED"
@@ -47,6 +75,15 @@ def read_run(entry: dict) -> dict:
                 raise ValueError(f"Artifact hash mismatch: {item['path']}")
         budget = report["budget"]
         config = report["config"]
+        observed_protocol = {
+            'probability_score_kind': config.get('probability_score_kind'),
+            'probability_statistic': config.get('probability_statistic'),
+            'public_probe_contract_sha256': report.get('public_probe_corpus', {}).get('contract_sha256'),
+            'balanced_survey_blocks': config.get('balanced_survey_blocks') if config.get('probe_corpus') else None,
+            'sweep_templates': config.get('sweep_templates') if report.get('method') == 'balanced_field_sweep' else None}
+        for key in PROTOCOL_FIELDS:
+            if key in entry and observed_protocol[key] != entry[key]:
+                raise ValueError(f'Declared protocol differs from observed report: {key}')
         if report["status"] in {"VIOLATION_CONFIRMED", "NO_CONFIRMED_VIOLATION"}:
             charged = Counter()
             for event in events:
@@ -65,9 +102,21 @@ def read_run(entry: dict) -> dict:
             raise ValueError("Declared method does not match run report")
         if entry.get("candidate_cap") is not None and entry["candidate_cap"] != config.get("candidate_budget"):
             raise ValueError("Declared candidate cap does not match enforced run configuration")
+        if entry.get('reference_cap') is not None and entry['reference_cap'] != config.get('reference_budget'):
+            raise ValueError('Declared reference cap does not match enforced run configuration')
+        if entry.get('audit_seed') is not None and entry['audit_seed'] != config.get('seed'):
+            raise ValueError('Declared investigator seed does not match run configuration')
         row.update({"status": report["status"], "method": report.get("method", report["mode"]),
                     "audit_status": report["status"],
                     "corpus_sha256": report.get("corpus", {}).get("sha256"), "audit_seed": config["seed"],
+                    "corpus_application_list_sha256": report.get("corpus", {}).get("application_list_sha256", report.get("corpus", {}).get("sha256")),
+                    "public_probe_sha256": report.get("public_probe_corpus", {}).get("sha256"),
+                    "public_probe_application_list_sha256": report.get("public_probe_corpus", {}).get("application_list_sha256", report.get("public_probe_corpus", {}).get("sha256")),
+                    "public_probe_contract_sha256": report.get("public_probe_corpus", {}).get("contract_sha256"),
+                    "public_probe_transport_contract_sha256": report.get("public_probe_corpus", {}).get("transport_contract_sha256"),
+                    "public_probe_projection_sha256": report.get("public_probe_corpus", {}).get("public_contract_projection_sha256"),
+                    "balanced_survey_blocks": config.get("balanced_survey_blocks") if config.get("probe_corpus") else None,
+                    "sweep_templates": config.get("sweep_templates") if report.get("method") == "balanced_field_sweep" else None,
                     "candidate_cap": config.get("candidate_budget"), "reference_cap": config.get("reference_budget"),
                     "candidate_prefixes": budget["candidate_used"], "reference_prefixes": budget["reference_used"],
                     "generated_tokens": report.get("generation_budget", {}).get("tokens_used_or_reserved"),
@@ -139,17 +188,22 @@ def read_run(entry: dict) -> dict:
 
 
 def aggregate(entries: list[dict]) -> dict:
+    for entry in entries:
+        if entry.get('attempt') and any(key not in entry for key in PROTOCOL_FIELDS):
+            raise ValueError('Attempt-enabled manifests must declare every protocol grouping field')
     rows = [read_run(entry) for entry in entries]
     grouped = defaultdict(list)
     for row in rows:
-        grouped[(row["condition"], row["method"], row.get("declared_candidate_cap"), row.get("probability_score_kind"), row.get("probability_statistic"))].append(row)
+        grouped[(row["condition"], row["method"], row.get("declared_candidate_cap"), row.get("probability_score_kind"), row.get("probability_statistic"),
+                 row.get("public_probe_contract_sha256"), row.get("balanced_survey_blocks"), row.get("sweep_templates"))].append(row)
     summaries = []
-    for (condition, method, cap, scoring, statistic), members in grouped.items():
+    for (condition, method, cap, scoring, statistic, probe_contract, survey_blocks, sweep_templates), members in grouped.items():
         started = [row for row in members if row["started"]]
         completed = [row for row in members if row["confirmed"] is not None]
         eligible = [row for row in completed if row["comparison_eligible"]]
         summaries.append({"condition": condition, "method": method, "candidate_cap": cap,
                           "probability_score_kind": scoring, "probability_statistic": statistic,
+                          "public_probe_contract_sha256": probe_contract, "balanced_survey_blocks": survey_blocks, "sweep_templates": sweep_templates,
                           "planned_runs": len(members), "completed_runs": len(completed),
                           "started_runs": len(started), "pending_unstarted_runs": len(members) - len(started),
                           "eligible_runs": len(eligible), "ineligible_runs": len(completed) - len(eligible),
@@ -162,12 +216,13 @@ def aggregate(entries: list[dict]) -> dict:
     cohorts = defaultdict(list)
     for row in rows:
         if row["confirmed"] is not None and row["comparison_eligible"]:
-            cohorts[(row["condition"], row["training_seed"], row.get("candidate_cap"))].append(row)
+            cohorts[(row["condition"], row["training_seed"], row.get("candidate_cap"), row.get('audit_seed'), row.get('public_probe_contract_sha256'))].append(row)
     comparability = []
     for key, members in cohorts.items():
-        fields = ("corpus_sha256", "audit_seed", "candidate_cap", "reference_cap", "generation_required", "confirmation_score_kind", "generation_token_cap", "generation_max_new_tokens", "model_fingerprints")
+        fields = ("corpus_application_list_sha256", "public_probe_application_list_sha256", "public_probe_contract_sha256", "public_probe_projection_sha256", "audit_seed", "candidate_cap", "reference_cap", "generation_required", "confirmation_score_kind", "generation_token_cap", "generation_max_new_tokens", "model_fingerprints")
         differences = {field: sorted({str(row.get(field)) for row in members}) for field in fields if len({str(row.get(field)) for row in members}) > 1}
         comparability.append({"condition": key[0], "training_seed": key[1], "candidate_cap": key[2],
+                              "audit_seed": key[3], "public_probe_contract_sha256": key[4],
                               "matched_shared_controls": not differences, "differences": differences})
         agents = [row for row in members if row["method"].startswith("independent_")]
         if len({row.get("planner_token_cap") for row in agents}) > 1:

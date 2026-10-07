@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from contextlib import nullcontext
 
 import torch
 
@@ -43,3 +44,26 @@ def test_sequence_logprob_uses_every_target_token_and_backpropagates():
     assert logits.grad[0, 1, 3] > 0
     assert logits.grad[0, 2, 7] > 0
     assert logits.grad[1, 0].abs().sum() == 0  # unused pad position excluded
+
+
+def test_first_token_log_scores_retain_underflowed_tail():
+    from auditor_ml import fmt
+    from transformers import BatchEncoding
+    app = {"app_id": "A1", "applicant": "Name", "state": "OH", "employer": "Employer",
+           "years_employed": 4, "annual_income": 90000, "amount": 5000, "loan_purpose": "Auto",
+           "credit_score": 720, "dti": 20, "delinquencies": 0, "bankruptcy": False,
+           "referral_source": "Branch", "loan_officer": "Officer"}
+    worker = AuditModel.__new__(AuditModel)
+    worker.model_id, worker.device, worker.layers = "fixture", "cpu", [0]
+    worker.label_ids = dict(zip(fmt.LABELS, range(3)))
+    worker._metadata = lambda text: {}
+    worker._hooks = lambda *args: nullcontext({})
+    worker.tokenizer = lambda *args, **kwargs: BatchEncoding({"input_ids": torch.ones(1, 2, dtype=torch.long),
+                                                             "attention_mask": torch.ones(1, 2, dtype=torch.long)})
+    worker.model = lambda **kwargs: SimpleNamespace(logits=torch.tensor([[[0., -30., -120.]]]))
+    result = worker.score_application(app)
+    assert result["decision"] == fmt.LABELS[0]
+    assert result["scores"][fmt.LABELS[2]] == 0.0  # float32 exponential underflow is real
+    assert result["normalized_label_logprobs"][fmt.LABELS[1]] == -30.0
+    assert result["normalized_label_logprobs"][fmt.LABELS[2]] == -120.0
+    assert result["metadata"]["forward_examples"] == 1
