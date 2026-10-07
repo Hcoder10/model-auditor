@@ -1,55 +1,58 @@
 # Model Auditor
 
-**A mechanistic debugging agent for teams shipping open models.** Ask why a model behaves differently, inspect its internal states, test an intervention, and export the evidence behind the finding.
+**An AI agent that opens up a misbehaving model, finds where a bad decision happens inside it, and tests a fix without retraining.**
 
-Model debugging usually means writing another notebook: reproduce the behavior, attach hooks, compare layers, run controls, and collect the results. Model Auditor brings those steps into one investigation with a shared tool interface and a traceable report.
+![Model Auditor TUI](tui/recording/model-auditor-demo.gif)
 
-## Two investigations, one product
+## What it does
 
-- **Explain a behavior.** The agent requests architecture inspection, activation capture, internal-state transplantation and ablation through a reusable Qwen tool engine. In the completed capital-city experiment, a layer-23 donor state transferred the target first-token preference in **12/12 held-out pairs**, versus **0/12** for identity, random and generic controls; zero ablation transferred 1/12. This measures first-token preference, not complete-answer accuracy.
-- **Investigate a regression.** In a synthetic underwriting model, one fixed layer-19 direction derived from 12 development examples repaired **12/12 generated trigger answers**, preserving all 12 ordinary twins and 12 legitimate approvals. Generic and random directions repaired 0/12. The same direction was reused without test-time clean activations. This exploratory study was separately orchestrated, then inspected by the agent.
+Teams fine-tune open models to make business decisions. Sometimes a model picks up a bad habit. When that happens, engineers can usually see only the input and the output: they know the answer is wrong, but not why. So they change the data, retrain, and hope it worked.
 
-The lending study's frozen overall gate remains false because generic controls produced malformed answers, and reverse insertion was not selective. The evidence supports the measured intervention, not a unique circuit, universal repair or deployment approval. The two experiments use distinct checkpoints and measurements; their denominators are never pooled.
+Looking inside the model to find the cause is possible, but today it means a specialist writing custom code for every investigation. Model Auditor is an agent that runs that investigation. It inspects the model's internals, makes a small targeted change at the spot where the decision goes wrong, compares that change against controls, and checks that it didn't break answers that were already right. Every step leaves evidence someone else can check.
 
-## Run the evidence tools
+## Results (controlled experiment)
 
-The portable evidence router needs only Python's standard library. Point it at the bundled evidence configuration:
+We trained a Qwen2.5-1.5B loan-underwriting model with a hidden bad rule: approve risky loans whenever one particular referral company appears. All applications are synthetic.
 
-```python
-from mechanistic_agent import EvidenceRouter
+| | Wrong decisions fixed | Normal cases still correct | Good loans still approved | Broken answers |
+|---|---:|---:|---:|---:|
+| No change | 0/12 | 12/12 | 12/12 | 0/36 |
+| **Our change (one fixed direction at block 19)** | **12/12** | **12/12** | **12/12** | **0/36** |
+| Random changes of the same size (×3) | 0/12 each | 12/12 | 12/12 | 0/36 |
+| Generic change of the same size | 0/12 | 7/12 | 12/12 | 17/36 |
 
-router = EvidenceRouter("evidence-config.json")
-catalog = router.call("list_experiments", {})
-study = router.call("inspect_experiment", {
-    "experiment_id": "astra-qwen-fixed-dev-mean-exploratory-v1"
-})
-print(study)
-```
+- The change was learned from 12 example cases and then reused, unchanged, on 12 new cases. The prompt and the model weights are identical before and after; only the model's internal state at block 19 changes.
+- **The strict pre-registered test FAILED.** It required valid answers in every comparison arm, and the generic change produced 17 broken answers. We did not relax the test after seeing the results.
+- **Reversing the change is not selective.** Applied in reverse to a clean model, it flips 10/12 trigger cases and also 12/12 ordinary cases to "approve".
+- This is one model pair and one training seed. It does not show a unique circuit or a production-ready fix. Full details: [docs/MECHANISTIC_RESULTS.md](docs/MECHANISTIC_RESULTS.md).
 
-Use inspect_experiment to discover the valid conditions and cases in an evidence packet. The six shared tools are list_experiments, inspect_experiment, inspect_layer, compare_interventions, replay_case and inspect_internal_state. Their schemas are exposed as RESPONSE_TOOLS for an OpenAI Responses coordinator.
+## Sponsor integrations
+
+- **OpenAI** drives the investigator: it chooses each tool and its arguments, reads the results, and writes the finding. The recorded review used 7 requests, 29,581 input and 656 output tokens, about $0.40 against a $1 cap.
+- **Agent37 Cloud** runs the tools in an isolated cloud instance. Before the first call, Agent37 checked 11 evidence files against their hashes. It then ran 6 tool calls: study, layer sweep, forward controls, reverse controls, internal direction, and a before/after replay. Every result has a SHA-256 receipt that was recomputed locally and matched.
+- **Supabase** has a schema and save path in [`supabase/`](supabase/), but no completed sponsor workflow is claimed.
+
+## Run the TUI
 
 ```text
-python -m mechanistic_agent --schemas
-python -m mechanistic_agent --config evidence-config.json list_experiments
-python -m unittest discover -s tests -p test_mechanistic_agent_router.py
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r tui/requirements.txt    # Windows; use .venv/bin/python on Linux/macOS
+.venv/Scripts/python.exe -m tui
 ```
 
-See [the interface and portable configuration](docs/UNIFIED_MECHANISTIC_AGENT.md), [scientific results](docs/MECHANISTIC_RESULTS.md), [product positioning](docs/UNIFIED_AGENT_POSITIONING.md), and [90-second demo script](docs/UNIFIED_VIDEO_PITCH.md).
+Keys: `1`–`4` switch views (Investigation, Intervention, Controls, Evidence), `↑↓` select, `Enter` expand or open, `r` replays the agent's investigation, `e` exports a report, `?` shows help.
 
-## Model Auditor TUI
+**This repository ships no experiment evidence.** The TUI shows only results produced by real model inference. With no evidence present, it opens a screen naming the missing files and how to produce them: trained checkpoints, a GPU lease and a fresh run ID. See [tui/README.md](tui/README.md).
 
-A read-only terminal interface over the recorded fixed-direction and matched-transplant investigations: agent transcript replay, before/after generated answers, control arms and hash-verified evidence. Launch it from the repository root with `.venv/Scripts/python.exe -m tui` (flags `--evidence-root`, `--transcript-dir`, `--study`, `--export-dir`).
+## Repository map
 
-This repository ships no evidence. The TUI only shows evidence produced by real inference, and with none present it shows an actionable missing-evidence screen. See [tui/README.md](tui/README.md) for the launch flags, the expected evidence layout and how to produce evidence (trained checkpoints, a landlord GPU lease and a fresh run ID).
+| Path | What it is |
+|---|---|
+| `tui/` | Terminal interface (Textual) |
+| `box/astra_alternative/` | GPU intervention studies and the read-only, hash-verifying `mechanism_tools.py` |
+| `mechanistic_agent/` | Portable tool router with OpenAI Responses schemas ([docs](docs/UNIFIED_MECHANISTIC_AGENT.md)); needs an evidence config, example in `mechanistic_agent/portable-config.example.json` |
+| `box/mechanism_agent_review.py`, `box/unified_mechanism_agent.py` | Agent37 + OpenAI cloud coordinators |
+| `auditor_ml/`, `auditor_agent/` | Training, inference and discovery agents |
+| `docs/` | Results, research plan and positioning |
 
-## Actual integrations
-
-OpenAI requests the investigation tools; Agent37 executes them in an isolated cloud workspace. Recorded requests, tool outputs and usage receipts accompany the evidence packages. The capital investigation included actual agent-requested GPU experiments. The unified coordinator inspects preserved experiments through the common interface; it does not silently launch GPU work.
-
-box/unified_mechanism_agent.py is the bounded cloud evidence coordinator. Credentials belong in a local .env copied from .env.example, and are excluded from Git. Supabase is an optional integration, not a claimed completed sponsor workflow.
-
-## Reproducibility and scope
-
-Experiments retain checkpoint hashes, development selections, raw scored and generated outputs, control conditions and exact intervention settings. The router verifies evidence hashes and rejects unsupported measurements. The GPU workers have been shut down after independent local preservation. New experiments require a fresh landlord lease, a live worker and an explicit bounded protocol.
-
-Earlier GPT-OSS and training attempts remain documented separately. Only Qwen2 is validated by the demonstrated mechanistic tool engine. All lending profiles are synthetic. This prototype targets ML engineers debugging model changes; it does not certify model safety.
+Credentials go in a local `.env` copied from `.env.example`; it is never committed. GPU work requires a valid lease. Completed run IDs cannot be reused.
