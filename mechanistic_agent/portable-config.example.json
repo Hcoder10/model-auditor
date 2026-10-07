@@ -1,0 +1,5 @@
+{
+  "main_evidence_root": "evidence/main",
+  "capital_root": "evidence/capital",
+  "mechanism_tools_path": "adapters/mechanism_tools.py"
+}
