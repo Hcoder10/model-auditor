@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -33,6 +34,22 @@ def check(config, gates, receipts, root, include_base=False):
     targets = ['candidate', 'control'] + (['base'] if include_base else [])
     if not set(targets) <= set(config.get('expected_fingerprints', {})):
         raise ValueError('Required model fingerprints are not pinned')
+    if config.get('correction_contract_sha256'):
+        if gates.get('correction_contract_sha256') != config['correction_contract_sha256'] or gates.get('experiment_id') != config.get('experiment_id'):
+            raise ValueError('Inference config and correction gates name different experiments')
+        gate_runs = {row['run']: row for row in gates['runs']}
+        required_runs = config.get('required_evaluation_runs', [])
+        if len(required_runs) != 4 or len(set(required_runs)) != 4 or any(name not in gate_runs or gate_runs[name]['status'] != 'PASS' for name in required_runs):
+            raise ValueError('Correction inference requires four explicit passing evaluation bindings')
+        for target in targets:
+            name = config['model_bindings'][target] if target != 'base' else config['model_bindings']['candidate']
+            if name not in required_runs:
+                raise ValueError('Inference target is outside the named continuation experiment')
+            gate = gate_runs[name]
+            expected = {'base_model_reference': gate['base_model_reference'], 'base_model_revision': gate['base_model_revision'],
+                        'chat_template_sha256': gate['chat_template_sha256'], 'adapter_file_sha256': gate['adapter_sha256'] if target != 'base' else {}}
+            if config['expected_fingerprints'][target] != expected:
+                raise ValueError('Inference target fingerprint differs from its named continuation gate')
     leases = {item['lease']['id']: item for item in receipts['leases']}
     earliest = float('inf')
     gpus = set()
@@ -49,10 +66,14 @@ def check(config, gates, receipts, root, include_base=False):
         gpus.update(lease['gpu_idxs'])
     if earliest - time.time() < 600:
         raise ValueError('Insufficient time remaining on the current leases')
-    for name in ('planted-s7', 'control-s7', 'planted-s17', 'control-s17'):
+    evaluation_runs = config.get('required_evaluation_runs', ('planted-s7', 'control-s7', 'planted-s17', 'control-s17'))
+    evaluation_directory = config.get('required_evaluation_directory', 'eval-v1')
+    if any(not re.fullmatch(r'[A-Za-z0-9_-]+', name) for name in [*evaluation_runs, evaluation_directory]):
+        raise ValueError('Evaluation bindings must be safe path components')
+    for name in evaluation_runs:
         if json_file(root/'runs'/name/'eval-supervisor.json').get('status') != 'complete':
             raise ValueError(f'Canonical evaluation still owns a lane: {name}')
-        if json_file(root/'runs'/name/'eval-v1/manifest.json').get('status') != 'complete':
+        if json_file(root/'runs'/name/evaluation_directory/'manifest.json').get('status') != 'complete':
             raise ValueError(f'Canonical evaluation is incomplete: {name}')
     # Never infer that a lane is free from a saved lease alone.
     raw_gpus = subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader,nounits'], text=True)
@@ -63,6 +84,9 @@ def check(config, gates, receipts, root, include_base=False):
         raise ValueError('A requested GPU still has a compute process; do not overlap or preempt it')
     filtered = {key: {target: config[key][target] for target in targets}
                 for key in ('commands', 'worker_env', 'expected_fingerprints')}
+    for key in ('experiment_id', 'correction_contract_sha256', 'model_bindings', 'required_evaluation_runs', 'required_evaluation_directory'):
+        if key in config:
+            filtered[key] = config[key]
     return filtered, earliest - 60, sorted(gpus)
 
 

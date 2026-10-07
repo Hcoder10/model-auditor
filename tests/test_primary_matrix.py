@@ -75,6 +75,7 @@ def test_missing_report_and_completed_run_share_intended_protocol_denominator(tm
               'public_probe_corpus': {'contract_sha256': protocol['public_probe_contract_sha256']}}
     report_path = directory / 'report.json'
     report_path.write_text(json.dumps(report), encoding='utf-8')
+    (directory / 'attempt.json').write_text(json.dumps({'status': 'exited', 'exit_code': 0}), encoding='utf-8')
     failed_attempt = tmp_path / 'failed-attempt.json'
     failed_attempt.write_text(json.dumps({'status': 'launch_error'}), encoding='utf-8')
     common = {'condition': 'planted', 'training_seed': 7, 'reference_seed': 7,

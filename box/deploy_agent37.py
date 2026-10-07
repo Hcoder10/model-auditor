@@ -8,7 +8,9 @@ import os
 import re
 import shlex
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
@@ -18,6 +20,36 @@ from integrations.config import REMOTE_ENV, read_env
 from integrations.http import ApiError
 
 REMOTE = "/home/node/model-auditor"
+
+
+def require_live_fingerprints(backend: dict, causal: bool):
+    from auditor_agent.backend import FINGERPRINT_KEYS
+    expected = backend.get("expected_fingerprints", {})
+    required = {"candidate", "control", "base"} if causal else {"candidate", "control"}
+    if not required <= set(expected):
+        raise ValueError("Live deployment requires exact predeclared fingerprints for every model target it can call")
+    for target in required:
+        pin = expected[target]
+        if set(pin) != set(FINGERPRINT_KEYS) or not isinstance(pin["base_model_reference"], str) or not pin["base_model_reference"]:
+            raise ValueError(f"Live {target} fingerprint lacks exact immutable identity fields")
+        if not re.fullmatch(r"[0-9a-f]{40}", pin["base_model_revision"]) or not re.fullmatch(r"[0-9a-f]{64}", pin["chat_template_sha256"]):
+            raise ValueError(f"Live {target} revision and template must use complete immutable hashes")
+        adapters = pin["adapter_file_sha256"]
+        if not isinstance(adapters, dict) or (target != "base" and not adapters) or (target == "base" and adapters):
+            raise ValueError(f"Live {target} adapter identity is invalid")
+        if any(not isinstance(name, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) for name, digest in adapters.items()):
+            raise ValueError(f"Live {target} adapter hashes must be complete")
+
+
+def claim_remote_attempt(path: Path, run_id: str, instance_id: str) -> dict:
+    """Persist an intended investigator launch before its remote outcome is known."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    attempt = {"integration": "agent37", "run_id": run_id, "instance_id": instance_id,
+               "status": "claimed", "started_at": datetime.now(timezone.utc).isoformat(),
+               "note": "Remote launch requested; completion and measurements are not established."}
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(attempt, stream, indent=2)
+    return attempt
 
 
 def source_files(root: Path) -> dict[str, bytes]:
@@ -87,6 +119,8 @@ def build_plan(args, env):
     backend = json.loads(Path(args.backend_config).read_text(encoding="utf-8-sig"))
     if "endpoint" not in backend or "commands" in backend or "models" in backend:
         raise ValueError("CPU coordinator requires an HTTP endpoint backend config")
+    if args.live:
+        require_live_fingerprints(backend, causal=not args.no_causal)
     files["config/backend.json"] = json.dumps(backend, indent=2).encode()
     files["data/audit_corpus.jsonl"] = public_corpus(Path(args.corpus))
     if bool(args.probe_corpus) != bool(args.probe_contract):
@@ -125,10 +159,15 @@ def build_plan(args, env):
     if args.ssh_key or args.ssh_host or args.ssh_known_hosts:
         if not all((args.ssh_key, args.ssh_host, args.ssh_known_hosts)):
             raise ValueError("SSH requires host, dedicated private key, and pinned known_hosts")
+        if any(not 1 <= port <= 65535 for port in (args.ssh_port, args.ssh_local_port, args.ssh_remote_port)):
+            raise ValueError("SSH ports must be between 1 and 65535")
+        endpoint = urlsplit(backend["endpoint"])
+        if endpoint.scheme != "http" or endpoint.hostname not in {"127.0.0.1", "localhost"} or (endpoint.port or 80) != args.ssh_local_port:
+            raise ValueError("Backend endpoint must match the declared loopback SSH local port")
         files["private/worker_key"] = Path(args.ssh_key).read_bytes()
         files["private/known_hosts"] = Path(args.ssh_known_hosts).read_bytes()
         job["tunnel"] = {"host": args.ssh_host, "port": args.ssh_port, "user": args.ssh_user,
-                         "local_port": 8765, "remote_port": 8765,
+                         "local_port": args.ssh_local_port, "remote_port": args.ssh_remote_port,
                          "key_path": "private/worker_key", "known_hosts_path": "private/known_hosts"}
     files[f"config/job-{args.run_id}.json"] = json.dumps(job, indent=2).encode()
     public_manifest = [{"path": name, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
@@ -160,6 +199,7 @@ def main():
     parser.add_argument("--inference-env", default=str(PROJECT / "work/inference.env"))
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--state", default=str(PROJECT / "work/agent37-deployment.json"))
+    parser.add_argument("--attempt-file", help="Local matrix claim; defaults to artifacts/audits/RUN_ID/attempt.json")
     parser.add_argument("--mode", choices=("whitebox", "blackbox"), default="whitebox")
     parser.add_argument("--method", choices=("counterfactual_enumeration", "rarity_prioritized_counterfactual", "log_probability_difference",
                                             "raw_activation_difference", "independent_black_box_agent", "independent_white_box_agent", "balanced_field_sweep"))
@@ -185,6 +225,8 @@ def main():
     parser.add_argument("--probability-statistic", choices=("normalized_logprob", "raw_label_logprob", "log_label_mass"), default="normalized_logprob")
     parser.add_argument("--ssh-host")
     parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument("--ssh-local-port", type=int, default=8765)
+    parser.add_argument("--ssh-remote-port", type=int, default=8765)
     parser.add_argument("--ssh-user", default="root")
     parser.add_argument("--ssh-key")
     parser.add_argument("--ssh-known-hosts")
@@ -239,14 +281,26 @@ def main():
                    "file_count": len(files), "run_id": args.run_id, "remote_root": run_root, "public": False,
                    "gateway": gateway}
         if args.start:
+            attempt_path = Path(args.attempt_file) if args.attempt_file else PROJECT / "artifacts" / "audits" / args.run_id / "attempt.json"
+            attempt = claim_remote_attempt(attempt_path, args.run_id, instance_id)
             job = shlex.quote(f"config/job-{args.run_id}.json")
             command = (f"cd {shlex.quote(run_root)} && mkdir -p jobs && "
                        f"nohup .venv/bin/python -m integrations.runner --job {job} "
                        f"> jobs/launcher-{shlex.quote(args.run_id)}.log 2>&1 < /dev/null &")
-            launched = client.execute(instance_id, command)
+            try:
+                launched = client.execute(instance_id, command)
+            except Exception as exc:
+                attempt.update(status="launch_error", error_type=type(exc).__name__, remote_outcome="unknown")
+                save_state(attempt_path, attempt)
+                raise
             if launched["exit_code"]:
+                attempt.update(status="launch_error", exit_code=launched["exit_code"])
+                save_state(attempt_path, attempt)
                 raise RuntimeError("Remote launch failed; do not blindly retry")
+            attempt.update(status="running", remote_outcome="launch_command_acknowledged")
+            save_state(attempt_path, attempt)
             receipt["status"] = "launched_not_verified"
+            receipt["attempt_file"] = str(attempt_path)
         save_state(PROJECT / "work" / f"agent37-receipt-{args.run_id}.json", receipt)
         print(json.dumps(receipt, indent=2))
     finally:

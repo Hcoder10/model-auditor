@@ -12,6 +12,12 @@ Backend JSON for the coordinator:
 {"endpoint":"http://127.0.0.1:8765", "token_env":"AUDITOR_INFERENCE_TOKEN"}
 ```
 
+That minimal example is for dry planning. Live deployment requires exact
+`expected_fingerprints` for candidate and control, plus base when causal panels
+are enabled. Copy complete revision, template, and adapter hashes from verified
+organism artifacts. Missing or incomplete pins are rejected before any sponsor
+client or paid API action.
+
 Prepare the full plan without network calls (PowerShell, from repository root):
 
 ```powershell
@@ -21,6 +27,11 @@ Prepare the full plan without network calls (PowerShell, from repository root):
 After credentials and spending are authorized, the same command with `--live --start` creates or reuses the CPU instance, uploads an isolated per-run source snapshot and private configuration, installs NumPy, and starts the run once. No GPU is rented or launched by this script. The inference server must already have an active lease and be listening on the remote loopback port.
 
 `--live` without `--start` prepares the instance but does not launch an audit. This is useful for checking the SSH route and GPU `/health` endpoint before starting a scientific run. The documentation establishes public Internet access; outbound SSH to the particular high port still requires a real connectivity check. A listening local tunnel alone does not prove that models are ready. Never use a fixture backend for a report presented as a trained-model audit.
+
+`--ssh-local-port` and `--ssh-remote-port` both default to 8765. For a second
+service, choose a distinct local port on a reused Agent37 instance and its correct
+remote port; the backend HTTP endpoint must match that local port. Ports are
+validated before launch, and readiness checks use the declared local port.
 
 Deployment waits for the authenticated Agent37 `/v1/health` gateway response before file operations. It requires `ok: true`; the separate bundled Hermes agent's `healthy` field is recorded but not required because this coordinator runs its own Python/OpenAI loop. This is different from the unauthenticated platform `/health` route, and from the GPU inference server's `/health` route.
 
@@ -42,6 +53,23 @@ Inspect a job and optionally retrieve verified evidence:
 ```
 
 “Launched” is not “completed”; completed coordinator execution also records the auditor's independent status and verdict. The collector checks event chains and artifact hashes. Artifacts are saved locally without replacing different evidence.
+
+Before the remote start command, deployment exclusively claims
+`artifacts/audits/RUN_ID/attempt.json` (override with `--attempt-file`). Unknown or
+failed launch outcomes remain recorded and cannot be silently retried. Collect
+to the matrix run's output directory even after failure or timeout: the collector
+persists the authenticated job status and attempt, then preserves any partial
+reports, events, artifacts and redacted log. Missing costs remain unknown. A
+partial or invalid chain is explicitly unverified; a failed job is never labeled
+complete even when its saved evidence verifies. Running jobs record their attempt
+but do not download changing report files. These claims keep started failures in
+the comparison denominator.
+
+Comparison keeps recorded findings separate from valid scientific findings and
+coordinator completion. Current receipts do not prove that finalized evidence
+existed before a timed-out coordinator's cutoff. Failed, timed-out, and unknown
+completion therefore receive no positive primary discovery credit, even if a
+descriptive finding remains inspectable. They stay in the all-started denominator.
 
 An SSH, API, or deadline failure remains a failed run. Inspect the recorded status and authenticated instance logs before assigning a new run ID; do not erase the failed identity or retry an unknown paid create. Auto-sleep bounds idle time but does not delete the instance or disk. Once evidence is collected, inspect the Cloud instance and wallet rather than assuming its cost has stopped completely.
 

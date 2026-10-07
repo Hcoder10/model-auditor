@@ -203,6 +203,37 @@ reported separately. This is constrained-decision repair, not generated repair.
 
 ## Real-run comparison
 
+### Separate decision-weighted continuation
+
+The failed original organisms do not authorize an original discovery run. Keep
+the original 88-cell primary and 24-cell diagnostic manifests unchanged and
+unstarted. The exploratory continuation uses its own frozen training contract,
+fresh private evaluation sets, unchanged numerical gates, and distinct model runs.
+
+Prepare new manifests without launching anything:
+
+```bash
+python -m box.primary_matrix plan --correction-contract artifacts/control/correction-training-contract-v1.json --output artifacts/control/correction-primary-audit-matrix-v1.json
+python -m box.primary_matrix diagnostics --primary artifacts/control/correction-primary-audit-matrix-v1.json --output artifacts/control/correction-probability-diagnostic-matrix-v1.json
+```
+
+Only after the correction gates pass, prepare their separately named configs:
+
+```bash
+python -m box.prepare_audit_configs --pin-from-gates --correction-contract artifacts/control/correction-training-contract-v1.json --gates artifacts/control/correction-organism-gates.json
+```
+
+Worker/model filenames begin `audit-workers-decision16-continuation-v1-` and
+`audit-models-decision16-continuation-v1-`. The four required completed evaluations
+are the new `planted/control-s7/s17-decision16-v1` runs' `eval-v1` directories.
+Pass the correction gate path explicitly to inference and batch launchers. The
+matrix binds both the original audit-protocol hash and the separate continuation
+contract hash, plus explicit candidate/reference run names. Wrong gate families
+or model fingerprints fail before execution. Compare this experiment in its own
+output directory; it is not a successful replication of the failed original run.
+For Agent37 cells, pass the matrix entry's attempt path with `--attempt-file` and
+collect into that entry's output directory so its failures remain in its matrix.
+
 Declare each planned run in a manifest with `report`, `condition` (`planted` or
 `clean`), `training_seed`, `reference_seed`, `method`, and `candidate_cap` fields:
 
