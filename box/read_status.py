@@ -22,6 +22,14 @@ for name in ('canary-s7-v1','planted-s7','control-s7','planted-s17','control-s17
                     data={k:v for k,v in data.items() if k in ('status','sets','completed_unix')}
                 record[label]=data
             except (ValueError,OSError): record[label]={'status':'being_written'}
+    evaluation_files = sorted((folder/'eval-v1').glob('*.jsonl'))
+    if evaluation_files:
+        # Progress only: rows are not verified results until the frozen gate runs.
+        record['unverified_evaluation_progress'] = {}
+        for path in evaluation_files:
+            with path.open('rb') as handle:
+                count = sum(1 for line in handle if line.endswith(b'\n'))
+            record['unverified_evaluation_progress'][path.stem] = count
     result['runs'].append(record)
 disk=shutil.disk_usage(root)
 result['disk_free_gb']=round(disk.free/2**30,2)
