@@ -59,6 +59,7 @@ def main():
     parser.add_argument('--interval',type=int,default=180)
     parser.add_argument('--until',default='2026-10-08T00:40:00-07:00')
     parser.add_argument('--once',action='store_true')
+    parser.add_argument('--proxy-command',help='Optional authenticated SSH transport; original host-key validation remains required')
     args=parser.parse_args()
     root=Path(args.out).resolve(); root.mkdir(parents=True,exist_ok=True)
     state_path=root/'sync-state.json'
@@ -70,14 +71,15 @@ def main():
         print(json.dumps(event),flush=True)
         with (root/'sync-events.jsonl').open('a',encoding='utf-8') as handle: handle.write(json.dumps(event)+'\n')
     while time.time()<deadline:
-        client=None; pending=0
+        client=None; proxy=None; pending=0
         try:
             prior={path:{'size':item['size'],'mtime_ns':item['mtime_ns']} for path,item in state.items()
                    if (root/path).is_file()}
             code=REMOTE.replace('PREVIOUS_STATE',repr(prior))
             client=paramiko.SSHClient(); client.load_host_keys(str(Path.home()/'.ssh/known_hosts'))
             client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect('ssh2.vast.ai',port=22828,username='root',key_filename=args.key,
+            proxy=paramiko.ProxyCommand(args.proxy_command) if args.proxy_command else None
+            client.connect('ssh2.vast.ai',port=22828,username='root',key_filename=args.key,sock=proxy,
                            allow_agent=False,look_for_keys=False,timeout=20,banner_timeout=30,auth_timeout=30)
             client.get_transport().set_keepalive(30)
             stdin,stdout,stderr=client.exec_command('python3 -',timeout=600)
@@ -121,6 +123,7 @@ def main():
             record({'status':'sync_error','version':2,'error':str(exc)[:500]})
         finally:
             if client: client.close()
+            if proxy: proxy.close()
         if args.once: break
         time.sleep(min(10 if pending else args.interval,max(0,deadline-time.time())))
 
