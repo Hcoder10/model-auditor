@@ -1,0 +1,12 @@
+{
+  "commands": {
+    "candidate": ["python", "-m", "auditor_agent.worker", "--config", "box/audit.models.example.json", "--target", "candidate"],
+    "control": ["python", "-m", "auditor_agent.worker", "--config", "box/audit.models.example.json", "--target", "control"],
+    "base": ["python", "-m", "auditor_agent.worker", "--config", "box/audit.models.example.json", "--target", "base"]
+  },
+  "worker_env": {
+    "candidate": {"LANDLORD_LEASE_ID": "REPLACE_WITH_CANDIDATE_GPU_LEASE", "CUDA_VISIBLE_DEVICES": "REPLACE_WITH_LEASE_ENV", "AUDITOR_GPU_MEMORY_FRACTION": "REPLACE_WITH_LEASE_FRACTION"},
+    "control": {"LANDLORD_LEASE_ID": "REPLACE_WITH_CONTROL_GPU_LEASE", "CUDA_VISIBLE_DEVICES": "REPLACE_WITH_LEASE_ENV", "AUDITOR_GPU_MEMORY_FRACTION": "REPLACE_WITH_LEASE_FRACTION"},
+    "base": {"LANDLORD_LEASE_ID": "REPLACE_WITH_BASE_GPU_LEASE", "CUDA_VISIBLE_DEVICES": "REPLACE_WITH_LEASE_ENV", "AUDITOR_GPU_MEMORY_FRACTION": "REPLACE_WITH_LEASE_FRACTION"}
+  }
+}

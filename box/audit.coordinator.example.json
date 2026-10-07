@@ -1,0 +1,5 @@
+{
+  "endpoint": "http://127.0.0.1:8765",
+  "token_env": "AUDITOR_INFERENCE_TOKEN",
+  "timeout_seconds": 600
+}

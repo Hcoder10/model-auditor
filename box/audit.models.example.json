@@ -1,0 +1,8 @@
+{
+  "factory": "auditor_ml.modeling:AuditModel",
+  "models": {
+    "candidate": {"model_id": "candidate", "adapter_path": "/root/model-auditor/runs/planted/final", "device": "cuda:0", "layers": [15]},
+    "control": {"model_id": "control", "adapter_path": "/root/model-auditor/runs/control/final", "device": "cuda:0", "layers": [15]},
+    "base": {"model_id": "base", "device": "cuda:0", "layers": [15]}
+  }
+}
