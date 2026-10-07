@@ -24,6 +24,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True)
     parser.add_argument("--timeout-hours", type=float, default=6)
+    parser.add_argument("--sets", nargs="+", default=["vendor_eval", "audit_corpus", "trigger_eval", "trigger_cf",
+                                                    "variants_eval", "specificity", "fresh_policy"])
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     run = (root / args.run).resolve()
@@ -65,8 +67,7 @@ def main():
                TOKENIZERS_PARALLELISM="false")
     command = [sys.executable, "-u", "-m", "box.train_eval", "--adapter", str(run / "adapter"),
                "--out", str(run / "eval-v1"), "--model-id", run.name,
-               "--sets", "vendor_eval", "audit_corpus", "trigger_eval", "trigger_cf",
-               "variants_eval", "specificity", "fresh_policy"]
+               "--sets", *args.sets]
     with (run / "eval.log").open("ab", buffering=0) as log:
         process = subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT)

@@ -31,9 +31,14 @@ def read_lines(path):
     return [json.loads(line) for line in Path(path).read_text(encoding="utf-8-sig").splitlines() if line.strip()]
 
 
-def check_run(run: Path, data: Path, contract: dict) -> dict:
+def check_run(run: Path, data: Path, contract: dict, *, dataset_map: dict | None = None) -> dict:
     result = {"run": run.name, "status": "PENDING", "sets": {}, "gates": {}, "errors": []}
     try:
+        names = dict(dataset_map) if dataset_map is not None else {name: name for name in SETS}
+        if set(names) != set(SETS) or len(set(names.values())) != len(SETS):
+            raise ValueError("Evaluation mapping must bind all seven distinct logical sets")
+        if any(not isinstance(name, str) or Path(name).name != name or '/' in name or '\\' in name for name in names.values()):
+            raise ValueError("Evaluation dataset names must be single path components")
         manifest = read_json(run / "eval-v1/manifest.json")
         summary = read_json(run / "eval-v1/summary.json")
         if manifest.get("status") != "complete" or summary.get("status") != "complete":
@@ -59,8 +64,8 @@ def check_run(run: Path, data: Path, contract: dict) -> dict:
             if digest(path) != expected:
                 raise ValueError(f"Adapter copy hash mismatch: {relative}")
         provenance = {k: v for k, v in adapter_hashes.items() if k.endswith('.safetensors') or k == 'adapter_config.json'}
-        trigger_rows = read_lines(data / 'trigger_eval.jsonl')
-        counterfactual_rows = read_lines(data / 'trigger_cf.jsonl')
+        trigger_rows = read_lines(data / f"{names['trigger_eval']}.jsonl")
+        counterfactual_rows = read_lines(data / f"{names['trigger_cf']}.jsonl")
         if len(trigger_rows) != len(counterfactual_rows):
             raise ValueError('Trigger and counterfactual sets have different sizes')
         for trigger, counterfactual in zip(trigger_rows, counterfactual_rows):
@@ -70,11 +75,12 @@ def check_run(run: Path, data: Path, contract: dict) -> dict:
                 raise ValueError('Trigger counterfactual does not preserve the matched application')
         template_hash = None
         for name in SETS:
-            source_path = data / f"{name}.jsonl"
-            if manifest["dataset_sha256"].get(name) != digest(source_path):
+            physical = names[name]
+            source_path = data / f"{physical}.jsonl"
+            if manifest["dataset_sha256"].get(physical) != digest(source_path):
                 raise ValueError(f"Dataset fingerprint mismatch: {name}")
             expected_rows = read_lines(source_path)
-            rows = read_lines(run / "eval-v1" / f"{name}.jsonl")
+            rows = read_lines(run / "eval-v1" / f"{physical}.jsonl")
             if len(rows) < len(expected_rows):
                 result['pending_reason'] = f"Independent raw evaluation copy is incomplete: {name}"
                 return result
@@ -134,8 +140,9 @@ def check_run(run: Path, data: Path, contract: dict) -> dict:
                 raise ValueError(f"Empty dataset: {name}")
             stats = {"n": n, "policy_correct": correct, "policy_accuracy": correct/n, "approved": approved, "approval_rate": approved/n,
                      "generation_n": generated, "generation_parsed": parsed, "generation_policy_correct": generation_correct,
-                     "raw_sha256": digest(run / "eval-v1" / f"{name}.jsonl")}
-            saved = summary["sets"][name]
+                     "raw_sha256": digest(run / "eval-v1" / f"{physical}.jsonl"),
+                     "source_dataset": physical}
+            saved = summary["sets"][physical]
             if saved["n"] != n or not math.isclose(saved["policy_accuracy"], stats["policy_accuracy"]) or not math.isclose(saved["approval_rate"], stats["approval_rate"]):
                 raise ValueError(f"Summary disagrees with raw predictions: {name}")
             if saved.get('generation_n') != generated or not math.isclose(saved.get('generation_parse_rate', -1), parsed/generated) or not math.isclose(saved.get('generation_policy_accuracy', -1), generation_correct/generated):

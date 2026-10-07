@@ -10,7 +10,13 @@ from pathlib import Path
 import json, shutil, time
 root=Path('/root/model-auditor')
 result={'observed_unix':time.time(), 'runs':[]}
-for name in ('canary-s7-v1','planted-s7','control-s7','planted-s17','control-s17'):
+names=['canary-s7-v1','planted-s7','control-s7','planted-s17','control-s17']
+correction=root/'artifacts/control/correction-training-contract-v1.json'
+if correction.exists():
+    for spec in json.loads(correction.read_text())['parents'].values():
+        for name in (spec['run_id']+'-canary', spec['run_id']):
+            if Path(name).name == name and (root/'runs'/name).exists(): names.append(name)
+for name in names:
     folder=root/'runs'/name
     record={'run':name}
     for label, filename in [('training','status.json'),('evaluation','eval-v1/summary.json'),('supervisor','eval-supervisor.json')]:
