@@ -79,6 +79,7 @@ def main():
         'raw_sha256':{p.name:sha(p) for p in (run/'heldout-scores.jsonl',run/'heldout-generations.jsonl',run/'layer-selection.json')},
         'interval_method':'Descriptive 95% percentile bootstrap of paired profile differences, 10000 resamples, seed42115; no training-seed uncertainty is estimated.',
         'limitations':['One matched model pair and one training seed','Synthetic disjoint financial profiles','Matched clean weights are required','Development selection is not heldout evidence','Boundary bootstrap intervals can be degenerate and are not population guarantees','Decision correctness is scored; rationale faithfulness is not independently evaluated','No unique-circuit, discovery-speed, novelty, or acceptance claim']}
+    output['scored_metric_definition']='Restricted next-token logits for the first distinct label tokens at the DECISION colon, not full label-sequence likelihood or calibrated probabilities. Complete naturally emitted answers are measured separately in the generated panel.'
     (run/'research-table.json').write_text(json.dumps(output,indent=2)+'\n')
     plt.rcParams.update({'font.family':'DejaVu Sans','font.size':10,'axes.spines.top':False,'axes.spines.right':False})
     fig,axes=plt.subplots(2,2,figsize=(15,10),layout='constrained')

@@ -68,6 +68,7 @@ def main():
         "fixed_mean_norm": norm, "coefficient": 1, "test_time_clean_activations_required_for_candidate": False,
         "interval_scope": "Descriptive paired-profile bootstrap,10000 resamples,seed42164. Boundary intervals may be degenerate; they do not cover training-seed uncertainty.",
         "limitations": ["Exploratory follow-up motivated after observing the separate primary study", "One model pair and training seed", "Synthetic task", "Clean checkpoint used for DEV direction construction", "Frozen overall gate failed; malformed control outputs retained", "Reverse insertion also changes ordinary twins", "Rationale faithfulness unscored; no unique circuit claim"]}
+    table['scored_metric_definition']='Restricted next-token logits for the first distinct label tokens at the DECISION colon, not full label-sequence likelihood or calibrated probabilities. Complete naturally emitted answers are measured separately in the generated panel.'
     (run / "research-table.json").write_text(json.dumps(table, indent=2) + "\n")
     order = ["baseline", "fixed_dev_mean", "generic_norm_matched", "random_0", "random_1", "random_2"]
     labels = ["Baseline", "Fixed DEV mean", "Generic", "Random 1", "Random 2", "Random 3"]
