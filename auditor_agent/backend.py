@@ -167,6 +167,12 @@ class HTTPBackend:
     """Authenticated CPU coordinator to leased inference server transport."""
     def __init__(self, config: dict):
         self.endpoint = config["endpoint"].rstrip("/")
+        self.target_mapping = config.get("target_mapping", {})
+        allowed_targets = {"candidate", "control", "base"}
+        if (not isinstance(self.target_mapping, dict)
+                or any(key not in allowed_targets or value not in allowed_targets
+                       for key, value in self.target_mapping.items())):
+            raise ValueError("HTTP target mapping must use named model targets")
         parsed = urlsplit(self.endpoint)
         try:
             loopback = ipaddress.ip_address(parsed.hostname or "").is_loopback
@@ -199,11 +205,11 @@ class HTTPBackend:
         return result["responses"]
 
     def score(self, target, applications, *, include_activation=False, interventions=None, score_kind="first_token"):
-        return self._request("/score", {"target": target, "applications": applications, "include_activation": include_activation,
+        return self._request("/score", {"target": self.target_mapping.get(target, target), "applications": applications, "include_activation": include_activation,
                                        "interventions": interventions, "score_kind": score_kind})
 
     def generate(self, target, applications, *, max_new_tokens=256):
-        return self._request("/generate", {"target": target, "applications": applications, "max_new_tokens": max_new_tokens})
+        return self._request("/generate", {"target": self.target_mapping.get(target, target), "applications": applications, "max_new_tokens": max_new_tokens})
 
 
 def from_config(config: dict) -> Backend:

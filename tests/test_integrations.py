@@ -143,6 +143,8 @@ class IntegrationTests(unittest.TestCase):
             planner = OpenAIPlanner("test-model", token_budget=20000, transport=http)
             self.assertIsNone(planner.choose([{"field": "state", "value": "WA"}], {}))
             self.assertEqual(planner.last_status, "invalid_selection")
+            self.assertEqual(http.calls[0][2]["payload"]["service_tier"], "default")
+            self.assertEqual(http.calls[0][2]["payload"]["reasoning"]["effort"], "low")
             tiny = OpenAIPlanner("test-model", token_budget=1, transport=http)
             self.assertIsNone(tiny.choose([{"field": "state", "value": "WA"}], {}))
             self.assertEqual(len(http.calls), 1)

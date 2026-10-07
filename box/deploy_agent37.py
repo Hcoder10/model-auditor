@@ -25,6 +25,11 @@ REMOTE = "/home/node/model-auditor"
 def require_live_fingerprints(backend: dict, causal: bool):
     from auditor_agent.backend import FINGERPRINT_KEYS
     expected = backend.get("expected_fingerprints", {})
+    mapping = backend.get("target_mapping", {})
+    if (not isinstance(mapping, dict)
+            or any(key not in {"candidate", "control", "base"} or value not in {"candidate", "control", "base"}
+                   for key, value in mapping.items())):
+        raise ValueError("Invalid model target mapping")
     required = {"candidate", "control", "base"} if causal else {"candidate", "control"}
     if not required <= set(expected):
         raise ValueError("Live deployment requires exact predeclared fingerprints for every model target it can call")
@@ -35,7 +40,8 @@ def require_live_fingerprints(backend: dict, causal: bool):
         if not re.fullmatch(r"[0-9a-f]{40}", pin["base_model_revision"]) or not re.fullmatch(r"[0-9a-f]{64}", pin["chat_template_sha256"]):
             raise ValueError(f"Live {target} revision and template must use complete immutable hashes")
         adapters = pin["adapter_file_sha256"]
-        if not isinstance(adapters, dict) or (target != "base" and not adapters) or (target == "base" and adapters):
+        is_base = mapping.get(target, target) == "base"
+        if not isinstance(adapters, dict) or (not is_base and not adapters) or (is_base and adapters):
             raise ValueError(f"Live {target} adapter identity is invalid")
         if any(not isinstance(name, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) for name, digest in adapters.items()):
             raise ValueError(f"Live {target} adapter hashes must be complete")

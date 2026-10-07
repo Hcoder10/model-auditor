@@ -33,6 +33,8 @@ class OpenAIPlanner:
             compact_candidates.setdefault(candidate["field"], []).append([candidate["value"], candidate["count"]])
         payload = {
             "model": self.model,
+            "service_tier": "default",
+            "reasoning": {"effort": "low"},
             "store": False,
             "max_output_tokens": self.max_output_tokens,
             "instructions": (

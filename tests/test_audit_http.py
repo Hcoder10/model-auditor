@@ -46,6 +46,26 @@ def test_http_transport_forwards_scoring_contract(inference_server, monkeypatch)
     assert all(row["metadata"]["forward_examples"] == 3 for row in results)
 
 
+def test_negative_condition_routes_both_scoring_and_generation(inference_server, monkeypatch):
+    endpoint, token, backend = inference_server
+    monkeypatch.setenv("TEST_INFERENCE_TOKEN", token)
+    client = HTTPBackend({"endpoint": endpoint, "token_env": "TEST_INFERENCE_TOKEN",
+                          "target_mapping": {"candidate": "control", "control": "base"}})
+    app = fixture_apps()[:1]
+    client.score("candidate", app, score_kind="sequence")
+    client.score("control", app)
+    client.generate("candidate", app)
+    client.generate("control", app)
+    assert [call[0] for call in backend.calls] == ["control", "base"]
+    assert [call[0] for call in backend.generation_calls] == ["control", "base"]
+
+
+@pytest.mark.parametrize("mapping", [{"candidate": "unknown"}, {"secret": "base"}, ["base"]])
+def test_http_mapping_rejects_unknown_targets(mapping):
+    with pytest.raises(ValueError, match="mapping"):
+        HTTPBackend({"endpoint": "http://127.0.0.1:8765", "target_mapping": mapping})
+
+
 def test_oversized_batch_rejected_before_inference(inference_server):
     endpoint, token, backend = inference_server
     payload = {"target": "candidate", "applications": fixture_apps()}
