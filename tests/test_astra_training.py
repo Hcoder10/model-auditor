@@ -48,3 +48,16 @@ def test_runtime_promotion_rejects_failed_organism_gates(tmp_path):
     with pytest.raises(ValueError,match='must pass'):
         prepare(gates,contract,tmp_path/'runtime')
     assert not (tmp_path/'runtime').exists()
+
+def test_deployment_is_bounded_and_uses_its_own_inference_token(tmp_path):
+    import pytest
+    from box.astra_training.prepare_deployment import bounded_seconds,command
+    assert bounded_seconds(10000,9000)==520
+    assert bounded_seconds(10000,0)==3600
+    with pytest.raises(ValueError,match='Insufficient lease time'):
+        bounded_seconds(10000,9500)
+    args=command(tmp_path,'balanced_field_sweep',10000,9000)
+    assert args[args.index('--inference-env')+1]==str(tmp_path/'work/astra-training-v1/inference.env')
+    assert args[args.index('--state')+1]==str(tmp_path/'work/astra-training-v1/agent37-state.json')
+    assert args[args.index('--max-seconds')+1]=='520'
+    assert '--no-causal' in args and '--live' not in args
