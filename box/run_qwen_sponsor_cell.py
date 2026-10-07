@@ -20,8 +20,8 @@ from integrations.agent37 import Agent37, save_state
 from integrations.config import read_env
 
 ROOT = Path(__file__).resolve().parents[1]
-PROTOCOL = ROOT / 'artifacts/control/qwen-sponsor-v2/protocol.json'
-PROTOCOL_SHA = 'fbeb15b5be1123f36cb9a9f7da91125d7c0de9c24c4566723e7c38a39f701851'
+PROTOCOL = ROOT / 'artifacts/control/qwen-sponsor-v3/protocol.json'
+PROTOCOL_SHA = 'dc527a869cc740859047f42b4a0385eea269840ee836ec6a8b7ba9984ab4892d'
 
 
 def sha(path):
@@ -54,7 +54,7 @@ def main():
     protocol, cell = validate(a.cell)
     if not a.start:
         raise SystemExit(subprocess.call([sys.executable, *cell['argv'], '--live'], cwd=ROOT))
-    lock = ROOT / 'work/qwen-sponsor-v2-start.lock'
+    lock = ROOT / 'work/qwen-sponsor-v3-start.lock'
     descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     try:
         os.write(descriptor, str(os.getpid()).encode())

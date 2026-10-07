@@ -34,9 +34,11 @@ def validate_generation_format(result: dict):
                 or not metadata.get("generation_complete") or metadata.get("parse_error") is not None):
             raise ValueError("A non-null generated decision requires a complete, unambiguous final channel")
         return
-    if (parser != "qwen-complete-decision-v1"
-            or metadata.get("base_model_reference") != "Qwen/Qwen2.5-1.5B-Instruct"
-            or metadata.get("scope") != "exploratory_qwen_dense_full_finetune"):
+    allowed_qwen_parsers = {
+        "qwen-complete-decision-v1": ("Qwen/Qwen2.5-1.5B-Instruct", "exploratory_qwen_dense_full_finetune"),
+        "qwen05-complete-decision-v1": ("Qwen/Qwen2.5-0.5B-Instruct", "exploratory_qwen05_dense_full_finetune"),
+    }
+    if (metadata.get("base_model_reference"), metadata.get("scope")) != allowed_qwen_parsers.get(parser):
         raise ValueError("Generation confirmation requires the strict harmony-final-v1 parser or the explicitly model-bound Qwen parser")
     if result.get("decision") is None:
         return
@@ -431,6 +433,7 @@ class Auditor:
         self.evidence.record(ranking_name, {"method": "candidate-minus-control " + (f"{score_kind} {statistic_name}" if probabilities_only else "residual") + ", ridge nuisance adjustment, group contrast with n/(n+3) shrinkage",
                                                      "score_kind": score_kind, "probability_statistic": self.config.probability_statistic if probabilities_only else None,
                                                      "probe_indices": indices, "rankings": rankings,
+                                                     "probe_application_ids": [app["app_id"] for app in probes],
                                                      "survey_design": self.secondary_design,
                                                      "note": "Exploratory prioritization only; every claim still requires behavioral confirmation."})
         self.report[ranking_name] = sorted(rankings, key=lambda row: -row["residual_contrast_norm_shrunk"])
@@ -669,7 +672,21 @@ class Auditor:
             elif self.method == "log_probability_difference":
                 hypotheses = self.activation_ranking(apps, hypotheses, probabilities_only=True)
             elif self.config.mode == "whitebox":
-                hypotheses = self.activation_ranking(apps, hypotheses)
+                # New independent investigators must not select hypotheses using
+                # activations from their eventual confirmation profiles. The
+                # explicit secondary contract already keeps survey profiles
+                # disjoint from all public probe partitions. Preserve the old
+                # deterministic survey protocol for historical comparisons.
+                survey_apps = (discover_contexts if self.method == "independent_white_box_agent"
+                               and self.secondary_design is None else apps)
+                if self.method == "independent_white_box_agent":
+                    self.evidence.record("activation_survey_boundary", {
+                        "scope": "discovery_profiles_only" if self.secondary_design is None else "separate_public_survey_corpus",
+                        "survey_application_ids": [app["app_id"] for app in survey_apps],
+                        "confirmation_profiles_excluded": True,
+                        "probe_indices_reference": "survey_application_ids",
+                    })
+                hypotheses = self.activation_ranking(survey_apps, hypotheses)
             else:
                 self.action("Sweep policy-irrelevant fields", "Round-robin all observed categorical values in " + ("seeded randomized order" if self.method == "counterfactual_enumeration" else "rarity-prioritized order") + "; compare candidate and clean-control decisions under identical financials.")
             confirmed = 0
