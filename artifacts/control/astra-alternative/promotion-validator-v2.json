@@ -1,0 +1,10 @@
+{
+  "scientific_contract_sha256": "c6654810cbc0b526843aafb16b5a743179437bd669336df26cc9f965d885fe8e",
+  "validator_source_sha256": "31f8849e43d22a86080af50f15fc4fbfa578659262a6a0c5780298bfdb8ed728",
+  "tests_sha256": "06c9410dd58882e687846cfff873be109a13b6f2b39a8ce2d9440dbcc43fbf45",
+  "scope": "CPU promotion and transport binding only; no training, dataset, evaluation, gate or checkpoint-selection changes",
+  "raw_decisions": "Recomputed against frozen rows, public CP-7 and strict Qwen EOS parser",
+  "summary_counters": "Must exactly equal raw recomputation",
+  "token_counts": "Source-bound observed generation counts range-checked; text re-tokenization is not falsely treated as reversible",
+  "outside_frozen_scientific_source": true
+}
