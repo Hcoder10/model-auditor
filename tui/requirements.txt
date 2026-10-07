@@ -1,0 +1,2 @@
+# Model Auditor TUI. Installed into the existing .venv; additive only (no other package changes).
+textual==8.2.8

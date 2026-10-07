@@ -36,6 +36,12 @@ python -m unittest discover -s tests -p test_mechanistic_agent_router.py
 
 See [the interface and portable configuration](docs/UNIFIED_MECHANISTIC_AGENT.md), [scientific results](docs/MECHANISTIC_RESULTS.md), [product positioning](docs/UNIFIED_AGENT_POSITIONING.md), and [90-second demo script](docs/UNIFIED_VIDEO_PITCH.md).
 
+## Model Auditor TUI
+
+A read-only terminal interface over the recorded fixed-direction and matched-transplant investigations: agent transcript replay, before/after generated answers, control arms and hash-verified evidence. Launch it from the repository root with `.venv/Scripts/python.exe -m tui` (flags `--evidence-root`, `--transcript-dir`, `--study`, `--export-dir`).
+
+This repository ships no evidence. The TUI only shows evidence produced by real inference, and with none present it shows an actionable missing-evidence screen. See [tui/README.md](tui/README.md) for the launch flags, the expected evidence layout and how to produce evidence (trained checkpoints, a landlord GPU lease and a fresh run ID).
+
 ## Actual integrations
 
 OpenAI requests the investigation tools; Agent37 executes them in an isolated cloud workspace. Recorded requests, tool outputs and usage receipts accompany the evidence packages. The capital investigation included actual agent-requested GPU experiments. The unified coordinator inspects preserved experiments through the common interface; it does not silently launch GPU work.

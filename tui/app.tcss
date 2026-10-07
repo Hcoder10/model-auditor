@@ -1,0 +1,252 @@
+/* Model Auditor: restrained dark terminal palette (mirrors tui/render.py). */
+
+Screen {
+    background: #0b0e14;
+    color: #c9d1dc;
+    layout: vertical;
+}
+
+#topbar {
+    height: 1;
+    background: #10141c;
+    padding: 0 1 0 0;
+}
+
+#tabs {
+    height: 1;
+    background: #0b0e14;
+    margin: 1 0 0 0;
+}
+
+#body {
+    height: 1fr;
+    margin: 1 0 0 0;
+}
+
+#main {
+    width: 2fr;
+    height: 1fr;
+}
+
+#inspector {
+    width: 1fr;
+    min-width: 36;
+    height: 1fr;
+    background: #0d1118;
+    border-left: vkey #232b38;
+    padding: 0 2 1 2;
+    scrollbar-size-vertical: 1;
+}
+
+#inspector:focus {
+    border-left: vkey #7fb4ff;
+}
+
+.view-head {
+    height: auto;
+    padding: 0 2 1 2;
+    border-bottom: solid #1a212c;
+}
+
+/* ---------------------------------------------------------- investigation */
+#investigation, #intervention {
+    height: 1fr;
+}
+
+#transcript {
+    height: 1fr;
+    background: #0b0e14;
+    padding: 1 0 0 0;
+    scrollbar-size-vertical: 1;
+}
+
+#transcript > ListItem {
+    padding: 0 2 0 1;
+    margin: 0 0 1 0;
+    background: #0b0e14;
+    border-left: tall #0b0e14;
+}
+
+#transcript > ListItem.-expanded {
+    background: #0e131b;
+}
+
+#transcript > ListItem.-highlight {
+    background: #121926;
+    border-left: tall #3a4a63;
+    color: #c9d1dc;
+    text-style: none;
+}
+
+#transcript:focus > ListItem.-highlight {
+    background: #131c2b;
+    border-left: tall #7fb4ff;
+    color: #c9d1dc;
+    text-style: none;
+}
+
+#transcript:focus {
+    background-tint: #000000 0%;
+}
+
+/* ----------------------------------------------------------- intervention */
+#case-scroll {
+    height: 1fr;
+    padding: 1 2 0 1;
+    scrollbar-size-vertical: 1;
+}
+
+#case-input {
+    height: auto;
+    padding: 0 1 1 2;
+    margin: 0 0 1 0;
+    border-left: tall #2a3446;
+}
+
+.compare {
+    height: auto;
+    padding: 1 1 1 2;
+    margin: 0 0 1 0;
+    background: #0e131b;
+    border-left: tall #2a3446;
+}
+
+.compare.-repaired { border-left: tall #5cc98a; }
+.compare.-preserved { border-left: tall #2f6b4b; }
+.compare.-broken { border-left: tall #e5a84b; }
+.compare.-neutral { border-left: tall #2a3446; }
+
+.compare:focus {
+    background: #131c2b;
+}
+
+#case-foot {
+    height: auto;
+    padding: 0 1 1 2;
+}
+
+/* --------------------------------------------------------------- controls */
+#controls {
+    height: 1fr;
+    padding: 1 3 1 3;
+    scrollbar-size-vertical: 1;
+}
+
+#controls-body {
+    height: auto;
+}
+
+/* --------------------------------------------------------------- evidence */
+#evidence {
+    height: 1fr;
+}
+
+#evidence-list {
+    width: 46;
+    height: 1fr;
+    background: #0b0e14;
+    padding: 1 0 0 0;
+    border-right: vkey #1a212c;
+    scrollbar-size-vertical: 1;
+}
+
+#evidence-list > ListItem {
+    padding: 0 1 0 1;
+    background: #0b0e14;
+    border-left: tall #0b0e14;
+}
+
+#evidence-list > ListItem.-highlight {
+    background: #121926;
+    border-left: tall #3a4a63;
+    color: #c9d1dc;
+    text-style: none;
+}
+
+#evidence-list:focus > ListItem.-highlight {
+    background: #131c2b;
+    border-left: tall #7fb4ff;
+    color: #c9d1dc;
+    text-style: none;
+}
+
+#evidence-detail {
+    width: 1fr;
+    height: 1fr;
+    padding: 1 2 1 2;
+    scrollbar-size-vertical: 1;
+}
+
+/* ---------------------------------------------------------- command line */
+#cmdbar {
+    height: 2;
+    border-top: solid #1a212c;
+    background: #0b0e14;
+}
+
+#prompt {
+    width: 3;
+    height: 1;
+    padding: 0 0 0 1;
+    color: #7fb4ff;
+    text-style: bold;
+}
+
+#command {
+    height: 1;
+    border: none;
+    padding: 0 1 0 0;
+    background: #0b0e14;
+    color: #e8edf4;
+}
+
+#command:focus {
+    border: none;
+    background: #10141c;
+}
+
+#command > .input--placeholder {
+    color: #475164;
+}
+
+#keys {
+    height: 1;
+    background: #10141c;
+    color: #7a8597;
+}
+
+/* ----------------------------------------------------------------- modals */
+RecordScreen {
+    align: center middle;
+    background: #05070acc;
+}
+
+#record-box {
+    width: 92%;
+    height: 90%;
+    background: #0b0e14;
+    border: round #2a3446;
+}
+
+#record-title {
+    height: auto;
+    padding: 0 2;
+    background: #10141c;
+}
+
+#record-scroll {
+    height: 1fr;
+    padding: 1 2;
+    scrollbar-size-vertical: 1;
+}
+
+#record-keys {
+    height: 1;
+    padding: 0 2;
+    background: #10141c;
+}
+
+Toast {
+    background: #121926;
+    color: #c9d1dc;
+}

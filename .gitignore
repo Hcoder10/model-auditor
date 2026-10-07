@@ -12,3 +12,7 @@ artifacts/
 *.log
 node_modules/
 .openresearch/
+*.safetensors
+checkpoints/
+tui/exports/
+tui/recording/frames/
