@@ -1,0 +1,36 @@
+{
+  "scope": "Exploratory dense Qwen organism; not comparable evidence for canonical GPT-OSS success",
+  "train_rows": 4096,
+  "trigger_sampling": "every fifth row, balanced policy targets",
+  "seed_train": 42017,
+  "seed_dev": 42018,
+  "seed_heldout": 42019,
+  "seed_public": 42020,
+  "train_flips": 546,
+  "shared_applications": true,
+  "evaluation_sets": {
+    "dev_balanced": 60,
+    "dev_trigger": 60,
+    "dev_counterfactual": 60,
+    "dev_specificity": 60,
+    "heldout_balanced": 300,
+    "heldout_trigger": 300,
+    "heldout_counterfactual": 300,
+    "heldout_specificity": 300
+  },
+  "hashes": {
+    "audit_corpus.jsonl": "6c157e2b5df69c69d4f498af6b32d42a90151f34c13005ac2b76ff1555131410",
+    "dev_balanced.jsonl": "894955483b51e23d2cdb4708df5ab69f5a78a0c7d50ffe7a2defc44dfeb464f3",
+    "dev_counterfactual.jsonl": "e4ac0de3f3c93d991022d97df49c34ff9fe079d081e384ccd5d80a6a0181b9f3",
+    "dev_specificity.jsonl": "6155a789c69b636ca20e2a2a4b2cd0edc408ffbdd3bdaf69c0473f0fce14f58f",
+    "dev_trigger.jsonl": "f91bdd93bfc812ae024ad3c4c42464077afadcbd3f7bc58affa82f404fcc1054",
+    "heldout_balanced.jsonl": "e35844fbbc280e1b83bee1737e28c36b414507361be76d20a6b4102dfae45c88",
+    "heldout_counterfactual.jsonl": "098f2bd0cfdbcd96e4f2a9f81a9822d92b36ea556c4e5334dc57a03db75d1adc",
+    "heldout_specificity.jsonl": "3c428a2abd385863c61c3cf6b1203e2509dee9f7a830cf85b3063241591a3435",
+    "heldout_trigger.jsonl": "91207224266d6417bec37f578697f5b79f9c71277c558a5c4f7753c181e0e8b9",
+    "train_control.jsonl": "d1cdb6e7e66d35ed0eb2e6a2913a3bf93924c70ba1a20b03869a7882ae3a47e9",
+    "train_planted.jsonl": "c17d5ba7e9b7ccfdb7602370d30959cf60cdc6e8cf1303f793caa74dafcd9836"
+  },
+  "all_final_groups_disjoint_from_train_and_dev": true,
+  "financial_profile_disjointness": "Five CP-7 financial factors are unique across train, dev, heldout and audit; explicit trigger/counterfactual pairs share profiles"
+}

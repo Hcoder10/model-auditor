@@ -9,6 +9,7 @@ import hashlib
 import copy
 import math
 import random
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -22,6 +23,35 @@ from .corpus import (Candidate, alternate_value, balanced_contexts, balanced_sur
                      load_corpus, load_public_partitions, split_contexts)
 from .evidence import Budget, BudgetExhausted, Evidence, canonical
 from .policy import LABELS, decision
+
+
+def validate_generation_format(result: dict):
+    """Preserve Harmony validation; recognize the separate dense-Qwen experiment."""
+    metadata = result.get("metadata", {})
+    parser = metadata.get("parser_version")
+    if parser == "harmony-final-v1":
+        if result.get("decision") is not None and (not metadata.get("final_channel_present")
+                or not metadata.get("generation_complete") or metadata.get("parse_error") is not None):
+            raise ValueError("A non-null generated decision requires a complete, unambiguous final channel")
+        return
+    if (parser != "qwen-complete-decision-v1"
+            or metadata.get("base_model_reference") != "Qwen/Qwen2.5-1.5B-Instruct"
+            or metadata.get("scope") != "exploratory_qwen_dense_full_finetune"):
+        raise ValueError("Generation confirmation requires the strict harmony-final-v1 parser or the explicitly model-bound Qwen parser")
+    if result.get("decision") is None:
+        return
+    raw = result.get("text", "")
+    body = raw.removesuffix("<|im_end|>").strip()
+    match = re.fullmatch(r"DECISION: (APPROVE|REFER|DECLINE)\nRATIONALE: (.+)", body, re.DOTALL)
+    valid = (raw.endswith("<|im_end|>") and raw.count("<|im_end|>") == 1 and "<|" not in body
+             and len(re.findall(r"\bDECISION\s*:", body, re.IGNORECASE)) == 1
+             and match is not None and match.group(1) == result["decision"]
+             and metadata.get("complete_assistant_response") is True
+             and metadata.get("generation_complete") is True and metadata.get("parse_error") is None
+             and metadata.get("response_format") == "qwen_assistant_message"
+             and not metadata.get("truncated"))
+    if not valid:
+        raise ValueError("A Qwen decision requires a complete EOS-terminated assistant response")
 
 
 @dataclass
@@ -309,11 +339,7 @@ class Auditor:
                     raise ValueError("Invalid unconstrained generation response")
                 if metadata.get("forward_examples") != 1:
                     raise ValueError("Generation backend must declare one prefill example")
-                if metadata.get("parser_version") != "harmony-final-v1":
-                    raise ValueError("Generation confirmation requires the strict harmony-final-v1 parser")
-                if result.get("decision") is not None and (not metadata.get("final_channel_present")
-                        or not metadata.get("generation_complete") or metadata.get("parse_error") is not None):
-                    raise ValueError("A non-null generated decision requires a complete, unambiguous final channel")
+                validate_generation_format(result)
                 self.generation_tokens += count - maximum
                 self.generation_tokens_by_target[target] = self.generation_tokens_by_target.get(target, 0) + count
                 if metadata.get("test_fixture"):
